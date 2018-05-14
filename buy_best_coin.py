@@ -120,13 +120,14 @@ def buy_coin(coin):
             else:
                 side   = 'buy'
                 symbol = f"{coin}/BTC"
-                amount = amount_btc / tickers[symbol]['last'] * .999
+                amount = amount_btc / tickers[symbol]['last'] * .99
 
             print(f"{side} {amount} {symbol}")
             binance.create_order(symbol, 'market', side, amount)
             holding, amount_coin, amount_usdt, amount_btc = get_balance()
             assert holding == coin, holding
 
+    print(action)
     return action
 
 
@@ -164,7 +165,6 @@ def email_myself_plots(subject, coins):
 
 
 def email_myself(msg):
-
     server = smtplib.SMTP('smtp.gmail.com', 587)
     server.starttls()
     server.login("micah.d.lamb@gmail.com", os.environ['gmail_app_password'])
@@ -182,7 +182,6 @@ if __name__ == '__main__':
             coins = get_best_coins(symbols)
             best = coins[0].name if coins[0].goodness > 0 else 'USDT'
             result = buy_coin(best)
-            print(result)
             email_myself_plots(result, coins)
 
         except:
