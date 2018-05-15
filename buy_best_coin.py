@@ -8,15 +8,12 @@ import matplotlib
 matplotlib.use('Agg') # So I don't need tkinter
 import matplotlib.pyplot as plt
 
-
 import ccxt
 
 binance = ccxt.binance({
     'apiKey': os.environ['binance_apiKey'],
     'secret': os.environ['binance_secret']
 })
-
-tickers = binance.fetch_tickers()
 
 
 def get_symbols():
@@ -123,7 +120,7 @@ def buy_coin(coin):
             else:
                 side   = 'buy'
                 symbol = f"{coin}/BTC"
-                amount = amount_btc / tickers[symbol]['last'] * .99
+                amount = amount_btc / tickers[symbol]['last'] * .98
 
             print(f"{side} {amount} {symbol}")
             binance.create_order(symbol, 'market', side, amount)
@@ -177,11 +174,15 @@ def email_myself(msg):
 
 if __name__ == '__main__':
 
-    symbols = get_symbols()
-    print(f"Tracking symbols: {' '.join(symbols)}")
+    symbols = None
 
     while True:
         try:
+            tickers = binance.fetch_tickers()
+            if not symbols:
+                symbols = get_symbols()
+                print(f"Tracking symbols: {' '.join(symbols)}")
+
             coins = get_best_coins(symbols)
             best = coins[0].name if coins[0].goodness > 0 else 'USDT'
             result = buy_coin(best)
