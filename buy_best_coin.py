@@ -59,6 +59,8 @@ def get_best_coins(symbols):
 
         change   = (prices[-1] - prices[0]) / prices[-1]
         goodness = gain - change
+        if gain < 0: goodness += gain * 19*4/24 # Extra penalty for downward trend
+
         #print(symbol, gain, goodness)
 
         coin = Coin(symbol.split('/')[0], gain, goodness)
@@ -108,6 +110,7 @@ def buy_coin(coin):
                 amount = amount_coin
 
             print(f"{side} {amount} {symbol}")
+            # TODO apparently limit is better
             binance.create_order(symbol, 'market', side, amount)
             holding, amount_coin, amount_usdt, amount_btc = get_balance()
             assert holding == 'BTC', holding
@@ -140,7 +143,7 @@ def email_myself_plots(subject, coins):
     imgs = ""
     bufs = []
     for coin in coins[:5]:
-        plt.title(f"{coin.name} ({round(coin.gain * 100, 2)}%) {round(coin.goodness * 100, 2)}")
+        plt.title(f"{coin.name}  gain={round(coin.gain * 100, 2)}%, goodness={round(coin.goodness * 100, 2)}")
         plt.xlabel("hours")
         plt.xticks(range(-100 * 24, 10 * 24, 24))
         plt.plot(coin.times, coin.prices, marker='o')
