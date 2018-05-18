@@ -24,15 +24,14 @@ def get_symbols():
         if sym2 == 'BTC':  return sym1+'/USDT' not in tickers
 
     symbols = [symbol for symbol in tickers if keep(symbol)]
-    symbols.insert(0, symbols.pop(symbols.index('BTC/USDT'))) # Used to covert BTC to USD for later coins
+    symbols.insert(0, symbols.pop(symbols.index('BTC/USDT'))) # Used to covert BTC to USDT for later coins
     return symbols
 
 
-def get_best_coins(symbols):
+def get_best_coins():
     print('Checking price history and choosing best coins...')
-    class Coin(collections.namedtuple("Coin", "name gain goodness")): pass
     coins = []
-    for symbol in symbols:
+    for symbol in get_symbols():
         ohlcv = binance.fetch_ohlcv(symbol, f'4h', limit=19)
         prices = [day[3] for day in ohlcv]
         milli_seconds_in_hour = 60*60*1000
@@ -47,10 +46,14 @@ def get_best_coins(symbols):
         # Make time in past negative
         times = [time-times[-1] for time in times]
 
+        #print('RAW', symbol, prices)
+
         if symbol == 'BTC/USDT':
             btc_to_usd = prices
         elif '/BTC' in symbol:
             prices = [a*b for a,b in zip(prices, btc_to_usd)]
+
+        #print('USDT', symbol, prices)
 
         predict_time = times[-1]+24
         fit = np.polyfit(times, prices, 2)
@@ -76,7 +79,7 @@ def get_best_coins(symbols):
     return coins
 
 
-def buy_coin(coin):
+def get_balance():
     def to_btc(coin, value):
         if coin == 'BTC':
             return value
@@ -87,51 +90,48 @@ def buy_coin(coin):
     def to_usdt(coin, value):
         return to_btc(coin, value) * tickers["BTC/USDT"]['last']
 
-    def get_balance():
-        balance = binance.fetch_balance()
-        balance = [(coin, info['total']) for coin, info in balance.items() if coin == coin.upper()]
-        balance = [(coin, value, to_usdt(coin, value), to_btc(coin, value)) for coin, value in balance if value]
-        return max(balance, key=lambda item: item[2])
+    balance = binance.fetch_balance()
+    balance = [(coin, info['total']) for coin, info in balance.items() if coin == coin.upper()]
+    balance = [(coin, value, to_usdt(coin, value), to_btc(coin, value)) for coin, value in balance if value]
+    return max(balance, key=lambda item: item[2])
 
-    tickers = binance.fetch_tickers()  # In case previous code took a while
-    holding, amount_coin, amount_usdt, amount_btc = get_balance()
 
-    action = f'{holding} transferred to {coin}...' if coin != holding else f'HODL {coin}'
-    if coin != holding:
-        print(f'Transferring {holding} to {coin}...')
-        if holding != 'BTC':
-            if holding == 'USDT':
-                side   = 'buy'
-                symbol = 'BTC/USDT'
-                amount = amount_btc * .999
-            else:
-                side   = 'sell'
-                symbol = f"{holding}/BTC"
-                amount = amount_coin
+def buy_coin(coin):
+    global holding, amount_coin, amount_usdt, amount_btc
 
-            print(f"{side} {amount} {symbol}")
-            # TODO apparently limit is better
-            binance.create_order(symbol, 'market', side, amount)
-            holding, amount_coin, amount_usdt, amount_btc = get_balance()
-            assert holding == 'BTC', holding
+    print(f'Transferring {holding} to {coin}...')
+    if holding != 'BTC':
+        if holding == 'USDT':
+            side   = 'buy'
+            symbol = 'BTC/USDT'
+            amount = amount_btc * .999
+        else:
+            side   = 'sell'
+            symbol = f"{holding}/BTC"
+            amount = amount_coin
 
-        if coin != 'BTC':
-            if coin == 'USDT':
-                side   = 'sell'
-                symbol = 'BTC/USDT'
-                amount = amount_btc
-            else:
-                side   = 'buy'
-                symbol = f"{coin}/BTC"
-                amount = amount_btc / tickers[symbol]['last'] * .98
+        print(f"{side} {amount} {symbol}")
+        # TODO apparently limit is better
+        binance.create_order(symbol, 'market', side, amount)
+        time.sleep(1)
+        holding, amount_coin, amount_usdt, amount_btc = get_balance()
+        assert holding == 'BTC', holding
 
-            print(f"{side} {amount} {symbol}")
-            binance.create_order(symbol, 'market', side, amount)
-            holding, amount_coin, amount_usdt, amount_btc = get_balance()
-            assert holding == coin, holding
+    if coin != 'BTC':
+        if coin == 'USDT':
+            side   = 'sell'
+            symbol = 'BTC/USDT'
+            amount = amount_btc
+        else:
+            side   = 'buy'
+            symbol = f"{coin}/BTC"
+            amount = amount_btc / tickers[symbol]['last'] * .98
 
-    print(action)
-    return action
+        print(f"{side} {amount} {symbol}")
+        binance.create_order(symbol, 'market', side, amount)
+        time.sleep(1)
+        holding, amount_coin, amount_usdt, amount_btc = get_balance()
+        assert holding == coin, holding
 
 
 def email_myself_plots(subject, coins):
@@ -140,13 +140,21 @@ def email_myself_plots(subject, coins):
     results = '\n'.join(f"{coin.name} {coin.gain}" for coin in coins[:5])
     msg.set_content(results)
 
+    # Show top 5 coins + BTC
+    show = coins[:5]
+    btc  = next(c for c in coins if c.name == 'BTC')
+    if btc not in show:
+        show.append(btc)
+
     imgs = ""
     bufs = []
-    for coin in coins[:5]:
+    for coin in show:
         plt.title(f"{coin.name}  gain={round(coin.gain * 100, 2)}%, goodness={round(coin.goodness * 100, 2)}")
         plt.xlabel("hours")
         plt.xticks(range(-100 * 24, 10 * 24, 24))
         plt.plot(coin.times, coin.prices, marker='o')
+        for x,y in zip(coin.times, coin.prices):
+            plt.text(x, y, '%g'%y)
         fit_times = np.linspace(coin.times[0], coin.predict_time, len(coin.times) * 2)
         fit_prices = [np.polyval(coin.fit, time) for time in fit_times]
         plt.plot(fit_times, fit_prices, '--')
@@ -175,30 +183,49 @@ def email_myself(msg):
     server.quit()
 
 
-if __name__ == '__main__':
+# MAIN #################################################################################################################
+class Coin(collections.namedtuple("Coin", "name gain goodness")): pass
 
-    symbols = None
 
-    while True:
+while True:
+    try:
+        tickers = binance.fetch_tickers()
+        holding, amount_coin, amount_usdt, amount_btc = get_balance()
+        coins = get_best_coins()
+
+        best  = coins[0]
+        usdt  = Coin('USDT', 0, 0)
+        btc   = next(c for c in coins if c.name == 'BTC')
+        hodl  = next(c for c in coins if c.name == holding) if holding != 'USDT' else usdt
+
+        if best.goodness < .1:
+            buy = btc if btc.goodness > 0 else usdt
+            result = f'Fallback from {hodl.name} to {buy.name}' if buy != hodl else f'HODL {hodl.name}'
+        elif best.goodness - hodl.goodness < .05:
+            buy = hodl
+            result = f'HODL {hodl.name}'
+        else:
+            buy = best
+            result = f'{hodl.name} transferred to {best.name}'
+
         try:
-            tickers = binance.fetch_tickers()
-            if not symbols:
-                symbols = get_symbols()
-                print(f"Tracking symbols: {' '.join(symbols)}")
-
-            coins = get_best_coins(symbols)
-            best = coins[0].name if coins[0].goodness > 0 else 'USDT'
-            result = buy_coin(best)
+            if buy != hodl:
+                buy_coin(buy.name)
+        except:
+            result += '...failed'
+            raise
+        finally:
+            print(result)
             email_myself_plots(result, coins)
 
-        except:
-            import traceback
-            error = traceback.format_exc()
-            print(error, file=sys.stderr)
-            msg = EmailMessage()
-            msg['Subject'] = 'ERROR'
-            msg.set_content(error)
-            email_myself(msg)
+    except:
+        import traceback
+        error = traceback.format_exc()
+        print(error, file=sys.stderr)
+        msg = EmailMessage()
+        msg['Subject'] = 'ERROR'
+        msg.set_content(error)
+        email_myself(msg)
 
-        time.sleep(3600*4)
-        print('-'*30 + '\n')
+    time.sleep(3600*4)
+    print('-'*30 + '\n')
