@@ -71,7 +71,7 @@ def get_best_coins():
         gain_7day = (expected_7day - current) / current
         change_3day = (current - prices_3day[0]) / current
 
-        weight = .5 if gain_3day > 0 else -3
+        weight = .5 if gain_3day > 0 else 3
         goodness = gain_3day * weight + gain_7day - change_3day
 
         #print(symbol, gain, goodness)
