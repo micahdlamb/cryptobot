@@ -1,3 +1,14 @@
+"""
+TODO
+Merge expected and goodness into expected.
+Implement calculate_expected that takes a coin parameters and history. Long term time is based on length of list.
+Create test function to run code over history and create a plot of balance / time + text of holding coin at each point.
+Use hill search to find best parameters.
+
+Investigate using limit buy instead of market buy
+Implement direct buy to USDT
+"""
+
 import os, sys, time, collections, io, contextlib
 import smtplib
 from email.message import EmailMessage
@@ -71,8 +82,8 @@ def get_best_coins():
         gain_7day = (expected_7day - current) / current
         change_3day = (current - prices_3day[0]) / current
 
-        weight = .5 if gain_3day > 0 else 3
-        goodness = gain_3day * weight + gain_7day - change_3day
+        weight = 3 if gain_3day < 0 else 1
+        goodness = (gain_3day * weight - change_3day) * .5 + gain_7day
 
         #print(symbol, gain, goodness)
 
