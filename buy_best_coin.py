@@ -6,7 +6,6 @@ Create test function to run code over history and create a plot of balance / tim
 Use hill search to find best parameters.
 
 Investigate using limit buy instead of market buy
-Implement direct buy to USDT
 """
 
 import os, sys, time, collections, io, contextlib
@@ -64,8 +63,9 @@ def get_best_coins():
             btc_times  = times
         elif '/BTC' in symbol:
             prices = [a*b for a,b in zip(prices, btc_to_usd)]
-            for a,b in zip(times, btc_times):
-                assert abs(a-b) < .5, (symbol, a,b)
+            if any(abs(a-b) > 2 for a,b in zip(times, btc_times)):
+                print(f"Skipping {symbol} for bad data. len(times)={len(times)}")
+                continue
 
         #print('USDT', symbol, prices)
 
@@ -123,41 +123,30 @@ def get_balance():
 def buy_coin(coin):
     global holding, amount_coin, amount_usdt, amount_btc
 
-    print(f'Transferring {holding} to {coin}...')
-    if holding != 'BTC':
-        if holding == 'USDT':
-            side   = 'buy'
-            symbol = 'BTC/USDT'
-            amount = amount_btc * .99
-        else:
+    def buy(coin):
+        global holding, amount_coin, amount_usdt, amount_btc
+
+        if f"{holding}/{coin}" in tickers:
             side   = 'sell'
-            symbol = f"{holding}/BTC"
+            symbol = f"{holding}/{coin}"
             amount = amount_coin
+        else:
+            side   = 'buy'
+            symbol = f"{coin}/{holding}"
+            amount = amount_coin / tickers[symbol]['last'] * .98
+            assert symbol in tickers
 
         print(f"{side} {amount} {symbol}")
         # TODO apparently limit is better
         result = binance.create_order(symbol, 'market', side, amount)
         print(result)
-        time.sleep(1)
-        holding, amount_coin, amount_usdt, amount_btc = get_balance()
-        assert holding == 'BTC', holding
-
-    if coin != 'BTC':
-        if coin == 'USDT':
-            side   = 'sell'
-            symbol = 'BTC/USDT'
-            amount = amount_btc * .99 # Not sure why .99 needed, for fee?
-        else:
-            side   = 'buy'
-            symbol = f"{coin}/BTC"
-            amount = amount_btc / tickers[symbol]['last'] * .98
-
-        print(f"{side} {amount} {symbol}")
-        result = binance.create_order(symbol, 'market', side, amount)
-        print(result)
-        time.sleep(1)
         holding, amount_coin, amount_usdt, amount_btc = get_balance()
         assert holding == coin, holding
+
+    print(f'Transferring {holding} to {coin}...')
+    if f"{holding}/{coin}" not in tickers and f"{coin}/{holding}" not in tickers:
+        buy('BTC')
+    buy(coin)
 
 
 def email_myself_plots(subject, coins, log):
@@ -230,10 +219,10 @@ while True:
             btc   = next(c for c in coins if c.name == 'BTC')
             hodl  = next(c for c in coins if c.name == holding) if holding != 'USDT' else usdt
 
-            if best.goodness < .1:
+            if best.goodness < .05:
                 buy = btc if btc.goodness > 0 else usdt
                 result = f'Fallback from {hodl.name} to {buy.name}' if buy != hodl else f'HODL {hodl.name}'
-            elif best.goodness - hodl.goodness < .05:
+            elif best.goodness - hodl.goodness < .01:
                 buy = hodl
                 result = f'HODL {hodl.name}'
             else:
