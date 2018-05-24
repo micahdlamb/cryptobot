@@ -28,6 +28,7 @@ binance = ccxt.binance({
 
 def get_symbols():
     def keep(symbol):
+        assert '/' in symbol, symbol # Not sure why this was happening...
         #return '/USDT' in symbol
         sym1, sym2 = symbol.split('/')
         if sym2 == 'USDT': return True
@@ -211,15 +212,18 @@ while True:
     try:
         tickers = binance.fetch_tickers()
         holding, amount_coin, amount_usdt, amount_btc = get_balance()
-        coins = get_best_coins()
 
         with io.StringIO() as log, contextlib.redirect_stdout(Tee(log, sys.stdout)):
+            coins = get_best_coins()
             best  = coins[0]
             usdt  = Coin('USDT', 0, 0)
             btc   = next(c for c in coins if c.name == 'BTC')
             hodl  = next(c for c in coins if c.name == holding) if holding != 'USDT' else usdt
 
-            if best.goodness < .05:
+            if best == hodl and best.goodness > 0:
+                buy = hodl
+                result = f'HODL {hodl.name}'
+            elif best.goodness < .05:
                 buy = btc if btc.goodness > 0 else usdt
                 result = f'Fallback from {hodl.name} to {buy.name}' if buy != hodl else f'HODL {hodl.name}'
             elif best.goodness - hodl.goodness < .01:
