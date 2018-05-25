@@ -28,11 +28,13 @@ binance = ccxt.binance({
 
 def get_symbols():
     def keep(symbol):
-        assert '/' in symbol, symbol # Not sure why this was happening...
-        #return '/USDT' in symbol
-        sym1, sym2 = symbol.split('/')
-        if sym2 == 'USDT': return True
-        if sym2 == 'BTC':  return sym1+'/USDT' not in tickers
+        # Not sure why these are missing the /
+        if '/' not in symbol:
+            print(f'Ignoring {symbol}')
+            return False
+        coin1, coin2 = symbol.split('/')
+        if coin2 == 'USDT': return True
+        if coin2 == 'BTC':  return coin1+'/USDT' not in tickers
 
     symbols = [symbol for symbol in tickers if keep(symbol)]
     symbols.insert(0, symbols.pop(symbols.index('BTC/USDT'))) # Used to covert BTC to USDT for later coins
@@ -81,10 +83,12 @@ def get_best_coins():
         current = prices[-1]
         gain_3day = (expected_3day - current) / current
         gain_7day = (expected_7day - current) / current
-        change_3day = (current - prices_3day[0]) / current
+        change_3day  = (current - prices_3day[0]) / current
+        change_8hour = (current - prices[-3]) / current
+        change_4hour = (current - prices[-2]) / current
 
         weight = 3 if gain_3day < 0 else 1
-        goodness = (gain_3day * weight - change_3day) * .5 + gain_7day
+        goodness = (gain_3day * weight - change_3day) * .5 + gain_7day + (change_8hour + change_4hour) * .25
 
         #print(symbol, gain, goodness)
 
@@ -130,7 +134,7 @@ def buy_coin(coin):
         if f"{holding}/{coin}" in tickers:
             side   = 'sell'
             symbol = f"{holding}/{coin}"
-            amount = amount_coin
+            amount = amount_coin * .98
         else:
             side   = 'buy'
             symbol = f"{coin}/{holding}"
