@@ -1,6 +1,5 @@
 """
 TODO
-Merge expected and goodness into expected.
 Implement calculate_expected that takes a coin parameters and history. Long term time is based on length of list.
 Create test function to run code over history and create a plot of balance / time + text of holding coin at each point.
 Use hill search to find best parameters.
@@ -45,7 +44,10 @@ def get_best_coins():
     print('Checking price history and choosing best coins...')
     coins = []
     for symbol in get_symbols():
-        ohlcv = binance.fetch_ohlcv(symbol, f'4h', limit=7*6)
+        ohlcv = binance.fetch_ohlcv(symbol, f'4h', limit=30*6)
+        if len(ohlcv) != 30*6:
+            print(f"Skipping {symbol} for missing data. len(ohlcv)={len(ohlcv)}")
+            continue
         prices = [day[3] for day in ohlcv]
         milli_seconds_in_hour = 60*60*1000
         times = [day[0] / milli_seconds_in_hour for day in ohlcv]
@@ -67,44 +69,29 @@ def get_best_coins():
         elif '/BTC' in symbol:
             prices = [a*b for a,b in zip(prices, btc_to_usd)]
             if any(abs(a-b) > 2 for a,b in zip(times, btc_times)):
-                print(f"Skipping {symbol} for bad data. len(times)={len(times)}")
+                print(f"Skipping {symbol} for bad times")
                 continue
 
         #print('USDT', symbol, prices)
+        fit_days  = [3, 7 ,14, 30]
+        fit_times  = [times [-days*6:] for days in fit_days]
+        fit_prices = [prices[-days*6:] for days in fit_days]
+        fits = [np.polyfit(t, p, 2) for t,p in zip(fit_times, fit_prices)]
+        predict_time = times[-1] + 24
+        expected = np.average([np.polyval(fit, predict_time) for fit in fits])
+        expected = (expected - prices[-1]) / prices[-1]
 
-        predict_time = times[-1]+24
-        times_3day  = times [-3*6:]
-        prices_3day = prices[-3*6:]
-        fit_3day = np.polyfit(times_3day, prices_3day, 2)
-        fit_7day = np.polyfit(times, prices, 1)
-        expected_3day = np.polyval(fit_3day, predict_time)
-        expected_7day = np.polyval(fit_7day, predict_time)
-
-        current = prices[-1]
-        gain_3day = (expected_3day - current) / current
-        gain_7day = (expected_7day - current) / current
-        change_3day  = (current - prices_3day[0]) / current
-        change_8hour = (current - prices[-3]) / current
-        change_4hour = (current - prices[-2]) / current
-
-        weight = 3 if gain_3day < 0 else 1
-        goodness = (gain_3day * weight - change_3day) * .5 + gain_7day + (change_8hour + change_4hour) * .25
-
-        #print(symbol, gain, goodness)
-
-        coin = Coin(symbol.split('/')[0], gain_3day, goodness)
+        coin = Coin(symbol.split('/')[0], expected)
         coins.append(coin)
 
-        # For plotting
-        fit_times = np.linspace(times_3day[0], predict_time, len(times_3day) * 2)
+        plot_times, plot_prices = fit_times[1], fit_prices[1]
+        coin.plots = [(plot_times, plot_prices, 'actual', '-', 'o')]
+        for days, fit in zip(fit_days, fits):
+            times = plot_times[-days*6:]
+            fit_times = np.linspace(times[0], predict_time, len(times) * 2)
+            coin.plots.append((fit_times, [np.polyval(fit, time) for time in fit_times], f"{days} day fit", '--', None))
 
-        coin.plots = [
-            (times_3day, prices_3day, '-', 'o'),
-            (fit_times,  [np.polyval(fit_3day, time) for time in fit_times], '--', None),
-            (fit_times,  [np.polyval(fit_7day, time) for time in fit_times], '--', None)
-        ]
-
-    coins.sort(key=lambda coin: coin.goodness, reverse=True)
+    coins.sort(key=lambda coin: coin.expected, reverse=True)
     return coins
 
 
@@ -157,7 +144,7 @@ def buy_coin(coin):
 def email_myself_plots(subject, coins, log):
     msg = EmailMessage()
     msg['Subject'] = subject
-    results = '\n'.join(f"{coin.name} {coin.gain}" for coin in coins[:5])
+    results = '\n'.join(f"{coin.name} {coin.expected}" for coin in coins[:5])
     msg.set_content(results)
 
     # Show top 5 coins + BTC
@@ -169,14 +156,15 @@ def email_myself_plots(subject, coins, log):
     imgs = ""
     bufs = []
     for coin in show:
-        plt.title(f"{coin.name}  gain={round(coin.gain * 100, 2)}%, goodness={round(coin.goodness * 100, 2)}")
+        plt.title(f"{coin.name}  {round(coin.expected * 100, 2)}%")
         plt.xlabel("hours")
         plt.xticks(range(-100 * 24, 10 * 24, 24))
-        for x, y, linestyle, marker in coin.plots:
-            plt.plot(x, y, linestyle, marker=marker)
-        x, y, *args = coin.plots[0]
-        for a,b in zip(x,y):
-            plt.text(a, b, '%g' % b)
+        for x, y, label, linestyle, marker in coin.plots:
+            plt.plot(x, y, linestyle, marker=marker, label=label)
+        #x, y, *args = coin.plots[0]
+        #for a,b in zip(x,y):
+        #    plt.text(a, b, '%g' % b)
+        plt.legend()
         buf = io.BytesIO()
         plt.savefig(buf, format='png')
         buf.seek(0)
@@ -203,7 +191,7 @@ def email_myself(msg):
 
 
 # MAIN #################################################################################################################
-class Coin(collections.namedtuple("Coin", "name gain goodness")): pass
+class Coin(collections.namedtuple("Coin", "name expected")): pass
 
 class Tee:
     def __init__(self, *files):
@@ -220,17 +208,14 @@ while True:
         with io.StringIO() as log, contextlib.redirect_stdout(Tee(log, sys.stdout)):
             coins = get_best_coins()
             best  = coins[0]
-            usdt  = Coin('USDT', 0, 0)
+            usdt  = Coin('USDT', 0)
             btc   = next(c for c in coins if c.name == 'BTC')
             hodl  = next(c for c in coins if c.name == holding) if holding != 'USDT' else usdt
 
-            if best == hodl and best.goodness > 0:
-                buy = hodl
-                result = f'HODL {hodl.name}'
-            elif best.goodness < .05:
-                buy = btc if btc.goodness > 0 else usdt
+            if best.expected < .03:
+                buy = btc if btc.expected > 0 else usdt
                 result = f'Fallback from {hodl.name} to {buy.name}' if buy != hodl else f'HODL {hodl.name}'
-            elif best.goodness - hodl.goodness < .01:
+            elif best.expected - hodl.expected < .01:
                 buy = hodl
                 result = f'HODL {hodl.name}'
             else:
