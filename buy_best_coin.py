@@ -29,7 +29,7 @@ def get_symbols():
     def keep(symbol):
         # Not sure why these are missing the /
         if '/' not in symbol:
-            print(f'Ignoring {symbol}')
+            print(f'Skipping {symbol} for missing /')
             return False
         coin1, coin2 = symbol.split('/')
         if coin2 == 'USDT': return True
@@ -144,18 +144,12 @@ def buy_coin(coin):
 def email_myself_plots(subject, coins, log):
     msg = EmailMessage()
     msg['Subject'] = subject
-    results = '\n'.join(f"{coin.name} {coin.expected}" for coin in coins[:5])
+    results = '\n'.join(f"{coin.name} {coin.expected}" for coin in coins)
     msg.set_content(results)
-
-    # Show top 5 coins + BTC
-    show = coins[:5]
-    btc  = next(c for c in coins if c.name == 'BTC')
-    if btc not in show:
-        show.append(btc)
 
     imgs = ""
     bufs = []
-    for coin in show:
+    for coin in coins:
         plt.title(f"{coin.name}  {round(coin.expected * 100, 2)}%")
         plt.xlabel("hours")
         plt.xticks(range(-100 * 24, 10 * 24, 24))
@@ -212,15 +206,15 @@ while True:
             btc   = next(c for c in coins if c.name == 'BTC')
             hodl  = next(c for c in coins if c.name == holding) if holding != 'USDT' else usdt
 
-            if best.expected < .03:
-                buy = btc if btc.expected > 0 else usdt
-                result = f'Fallback from {hodl.name} to {buy.name}' if buy != hodl else f'HODL {hodl.name}'
-            elif best.expected - hodl.expected < .01:
+            if best.expected > 0 and best.expected > hodl.expected + .02:
+                buy = best
+                result = f'{hodl.name} transferred to {best.name}'
+            elif hodl.expected > 0:
                 buy = hodl
                 result = f'HODL {hodl.name}'
             else:
-                buy = best
-                result = f'{hodl.name} transferred to {best.name}'
+                buy = btc if btc.expected > 0 else usdt
+                result = f'Fallback from {hodl.name} to {buy.name}' if buy != hodl else f'HODL {hodl.name}'
 
             try:
                 if buy != hodl:
@@ -230,7 +224,15 @@ while True:
                 raise
             finally:
                 print(result)
-                email_myself_plots(result, coins, log.getvalue())
+
+                # Show top 3 coins + BTC + hodl
+                plot_coins = coins[:3]
+                if btc not in plot_coins:
+                    plot_coins.append(btc)
+                if hodl != usdt and hodl not in plot_coins:
+                    plot_coins.append(hodl)
+
+                email_myself_plots(result, plot_coins, log.getvalue())
 
     except:
         import traceback
