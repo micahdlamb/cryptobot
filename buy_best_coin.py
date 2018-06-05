@@ -3,8 +3,6 @@ TODO
 Implement calculate_expected that takes a coin parameters and history. Long term time is based on length of list.
 Create test function to run code over history and create a plot of balance / time + text of holding coin at each point.
 Use hill search to find best parameters.
-
-Investigate using limit buy instead of market buy
 """
 
 import os, sys, time, collections, io, contextlib
@@ -113,25 +111,35 @@ def get_balance():
 
 
 def buy_coin(coin):
-    global holding, amount_coin, amount_usdt, amount_btc
-
     def buy(coin):
         global holding, amount_coin, amount_usdt, amount_btc
 
         if f"{holding}/{coin}" in tickers:
             side   = 'sell'
             symbol = f"{holding}/{coin}"
-            amount = amount_coin * .98
+            price  = binance.fetch_ticker(symbol)['last'] * .999
+            amount = amount_coin
         else:
             side   = 'buy'
             symbol = f"{coin}/{holding}"
-            amount = amount_coin / tickers[symbol]['last'] * .98
-            assert symbol in tickers
+            price  = binance.fetch_ticker(symbol)['last'] * 1.001
+            amount = amount_coin / price
 
-        print(f"{side} {amount} {symbol}")
-        # TODO apparently limit is better
-        result = binance.create_order(symbol, 'market', side, amount)
-        print(result)
+        print(f"{side} {amount} {symbol} for {price}")
+        order = binance.create_order(symbol, 'limit', side, amount, price)
+        print(order)
+        id = order['id']
+        for i in range(4):
+            print(f"{order['filled']} / {order['amount']} filled")
+            if order['status'] == 'closed':
+                break
+            time.sleep(4)
+            order = binance.fetch_order(id, symbol=symbol)
+        else:
+            print(f"Cancelling order {id} {symbol}")
+            binance.cancel_order(id, symbol=symbol)
+            # return buy(coin) # Try again
+
         holding, amount_coin, amount_usdt, amount_btc = get_balance()
         assert holding == coin, holding
 
