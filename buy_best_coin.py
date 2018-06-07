@@ -71,7 +71,7 @@ def get_best_coins():
                 continue
 
         #print('USDT', symbol, prices)
-        fit_days  = [3, 7 ,14, 30]
+        fit_days  = [7 ,14, 30]
         fit_times  = [times [-days*6:] for days in fit_days]
         fit_prices = [prices[-days*6:] for days in fit_days]
         fits = [np.polyfit(t, p, 2) for t,p in zip(fit_times, fit_prices)]
@@ -113,35 +113,39 @@ def get_balance():
 def buy_coin(coin):
     def buy(coin):
         global holding, amount_coin, amount_usdt, amount_btc
+        for i in range(-3, 2):
+            if f"{holding}/{coin}" in tickers:
+                side   = 'sell'
+                symbol = f"{holding}/{coin}"
+                price = tickers['symbol']['last'] * (1-i/100)
+                amount = amount_coin
+            else:
+                side   = 'buy'
+                symbol = f"{coin}/{holding}"
+                price = tickers['symbol']['last'] * (1+i/100)
+                amount = amount_coin / price
 
-        if f"{holding}/{coin}" in tickers:
-            side   = 'sell'
-            symbol = f"{holding}/{coin}"
-            price  = binance.fetch_ticker(symbol)['last'] * .999
-            amount = amount_coin
-        else:
-            side   = 'buy'
-            symbol = f"{coin}/{holding}"
-            price  = binance.fetch_ticker(symbol)['last'] * 1.001
-            amount = amount_coin / price
+            print(f"{side} {amount} {symbol} for ${price * tickers['BTC/USDT']['last']}")
+            order = binance.create_order(symbol, 'limit', side, amount, price)
+            print(order)
+            id = order['id']
+            for i in range(4):
+                print(f"{order['filled']} / {order['amount']} filled")
+                if order['status'] == 'closed':
+                    break
+                time.sleep(60*30)
+                order = binance.fetch_order(id, symbol=symbol)
+            else:
+                print(f"Cancelling order {id} {symbol}")
+                binance.cancel_order(id, symbol=symbol)
 
-        print(f"{side} {amount} {symbol} for {price}")
-        order = binance.create_order(symbol, 'limit', side, amount, price)
-        print(order)
-        id = order['id']
-        for i in range(4):
-            print(f"{order['filled']} / {order['amount']} filled")
+            if order['filled']:
+                holding, amount_coin, amount_usdt, amount_btc = get_balance()
+
             if order['status'] == 'closed':
                 break
-            time.sleep(4)
-            order = binance.fetch_order(id, symbol=symbol)
-        else:
-            print(f"Cancelling order {id} {symbol}")
-            binance.cancel_order(id, symbol=symbol)
-            # return buy(coin) # Try again
 
-        holding, amount_coin, amount_usdt, amount_btc = get_balance()
-        assert holding == coin, holding
+        assert holding == coin, holding # Don't bother continuing if buy failed
 
     print(f'Transferring {holding} to {coin}...')
     if f"{holding}/{coin}" not in tickers and f"{coin}/{holding}" not in tickers:
