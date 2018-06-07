@@ -117,12 +117,12 @@ def buy_coin(coin):
             if f"{holding}/{coin}" in tickers:
                 side   = 'sell'
                 symbol = f"{holding}/{coin}"
-                price = tickers['symbol']['last'] * (1-i/100)
+                price = tickers[symbol]['last'] * (1-i/100)
                 amount = amount_coin
             else:
                 side   = 'buy'
                 symbol = f"{coin}/{holding}"
-                price = tickers['symbol']['last'] * (1+i/100)
+                price = tickers[symbol]['last'] * (1+i/100)
                 amount = amount_coin / price
 
             print(f"{side} {amount} {symbol} for ${price * tickers['BTC/USDT']['last']}")
