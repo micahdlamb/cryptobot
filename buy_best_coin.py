@@ -93,62 +93,66 @@ def get_best_coins():
     return coins
 
 
-def get_balance():
-    def to_btc(coin, value):
+def get_holding_coin():
+    def to_btc(coin, amount):
         if coin == 'BTC':
-            return value
+            return amount
         if coin == 'USDT':
-            return value / tickers["BTC/USDT"]['last']
-        return value * tickers[f"{coin}/BTC"]['last']
+            return amount / tickers["BTC/USDT"]['last']
+        return amount * tickers[f"{coin}/BTC"]['last']
 
-    def to_usdt(coin, value):
-        return to_btc(coin, value) * tickers["BTC/USDT"]['last']
+    def to_usdt(coin, amount):
+        return to_btc(coin, amount) * tickers["BTC/USDT"]['last']
 
     balance = binance.fetch_balance()
-    balance = [(coin, info['total']) for coin, info in balance.items() if coin == coin.upper()]
-    balance = [(coin, value, to_usdt(coin, value), to_btc(coin, value)) for coin, value in balance if value]
-    return max(balance, key=lambda item: item[2])
+    for coin, amount in balance['used'].items():
+        if amount:
+            print(f"WARNING {amount} {coin} is used")
+    balance = [(coin, amount) for coin, amount in balance['free'].items() if amount]
+    balance = [(coin, amount, to_usdt(coin, amount)) for coin, amount in balance]
+    hodl = max(balance, key=lambda item: item[2])
+    return collections.namedtuple("Holding", "coin amount amount_usdt")(*hodl)
 
 
 def buy_coin(coin):
     def buy(coin):
-        global holding, amount_coin, amount_usdt, amount_btc
+        global holding
         for i in range(-3, 2):
-            if f"{holding}/{coin}" in tickers:
+            if f"{holding.coin}/{coin}" in tickers:
                 side   = 'sell'
-                symbol = f"{holding}/{coin}"
+                symbol = f"{holding.coin}/{coin}"
                 price = tickers[symbol]['last'] * (1-i/100)
-                amount = amount_coin
+                amount = holding.amount
             else:
                 side   = 'buy'
-                symbol = f"{coin}/{holding}"
+                symbol = f"{coin}/{holding.coin}"
                 price = tickers[symbol]['last'] * (1+i/100)
-                amount = amount_coin / price
+                amount = holding.amount / price
 
             print(f"{side} {amount} {symbol} for ${price * tickers['BTC/USDT']['last']}")
             order = binance.create_order(symbol, 'limit', side, amount, price)
             print(order)
             id = order['id']
-            for i in range(4):
+            for i in range(3):
                 print(f"{order['filled']} / {order['amount']} filled")
                 if order['status'] == 'closed':
                     break
-                time.sleep(60*30)
+                time.sleep(60*60)
                 order = binance.fetch_order(id, symbol=symbol)
             else:
                 print(f"Cancelling order {id} {symbol}")
                 binance.cancel_order(id, symbol=symbol)
 
             if order['filled']:
-                holding, amount_coin, amount_usdt, amount_btc = get_balance()
+                holding = get_holding_coin()
 
             if order['status'] == 'closed':
                 break
 
-        assert holding == coin, holding # Don't bother continuing if buy failed
+        assert holding.coin == coin, holding.coin # Don't bother continuing if buy failed
 
-    print(f'Transferring {holding} to {coin}...')
-    if f"{holding}/{coin}" not in tickers and f"{coin}/{holding}" not in tickers:
+    print(f'Transferring {holding.coin} to {coin}...')
+    if f"{holding.coin}/{coin}" not in tickers and f"{coin}/{holding.coin}" not in tickers:
         buy('BTC')
     buy(coin)
 
@@ -209,14 +213,14 @@ class Tee:
 while True:
     try:
         tickers = binance.fetch_tickers()
-        holding, amount_coin, amount_usdt, amount_btc = get_balance()
+        holding = get_holding_coin()
 
         with io.StringIO() as log, contextlib.redirect_stdout(Tee(log, sys.stdout)):
             coins = get_best_coins()
             best  = coins[0]
             usdt  = Coin('USDT', 0)
             btc   = next(c for c in coins if c.name == 'BTC')
-            hodl  = next(c for c in coins if c.name == holding) if holding != 'USDT' else usdt
+            hodl  = next(c for c in coins if c.name == holding.coin) if holding.coin != 'USDT' else usdt
 
             if best.expected > 0 and best.expected > hodl.expected + .02:
                 buy = best
