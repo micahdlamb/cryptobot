@@ -133,12 +133,13 @@ def buy_coin(coin):
             order = binance.create_order(symbol, 'limit', side, amount, price)
             print(order)
             id = order['id']
-            for i in range(3):
+            for i in range(4):
                 print(f"{order['filled']} / {order['amount']} filled")
                 if order['status'] == 'closed':
                     break
-                time.sleep(60*60)
+                time.sleep(60*30)
                 order = binance.fetch_order(id, symbol=symbol)
+
             else:
                 print(f"Cancelling order {id} {symbol}")
                 binance.cancel_order(id, symbol=symbol)
@@ -149,7 +150,11 @@ def buy_coin(coin):
             if order['status'] == 'closed':
                 break
 
-        assert holding.coin == coin, holding.coin # Don't bother continuing if buy failed
+        else:
+            # Don't bother continuing if buy failed
+            raise TimeoutError(f"Buy of {coin} didn't get filled")
+
+        assert holding.coin == coin, holding.coin
 
     print(f'Transferring {holding.coin} to {coin}...')
     if f"{holding.coin}/{coin}" not in tickers and f"{coin}/{holding.coin}" not in tickers:
@@ -211,6 +216,7 @@ class Tee:
             file.write(data)
 
 while True:
+    start_time = time.time()
     try:
         tickers = binance.fetch_tickers()
         holding = get_holding_coin()
@@ -259,5 +265,9 @@ while True:
         msg.set_content(error)
         email_myself(msg)
 
-    time.sleep(3600*4)
+    # Run at most once every 4 hours
+    loop_hours = (time.time() - start_time) / 3600
+    if loop_hours < 4:
+        time.sleep(3600*(4 - loop_hours))
+
     print('-'*30 + '\n')
