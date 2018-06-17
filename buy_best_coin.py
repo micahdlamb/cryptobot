@@ -116,20 +116,24 @@ def get_holding_coin():
 
 def buy_coin(coin):
     def buy(coin):
-        global holding
-        for i in range(-3, 2):
+        holding = get_holding_coin()
+        assert holding.coin != coin, coin
+
+        for i in range(-2, 2):
+            holding_amount = binance.fetch_balance()[holding.coin]['free']
             if f"{holding.coin}/{coin}" in tickers:
                 side   = 'sell'
                 symbol = f"{holding.coin}/{coin}"
                 price = tickers[symbol]['last'] * (1-i/100)
-                amount = holding.amount
+                amount = holding_amount
             else:
                 side   = 'buy'
                 symbol = f"{coin}/{holding.coin}"
                 price = tickers[symbol]['last'] * (1+i/100)
-                amount = holding.amount / price
+                amount = holding_amount / price
 
-            print(f"{side} {amount} {symbol} for ${price * tickers['BTC/USDT']['last']}")
+            to_usd = tickers['BTC/USDT']['last'] if symbol.endswith('/BTC') else 1
+            print(f"{side} {amount} {symbol} for ${price * to_usd}")
             order = binance.create_order(symbol, 'limit', side, amount, price)
             print(order)
             id = order['id']
@@ -144,9 +148,6 @@ def buy_coin(coin):
                 print(f"Cancelling order {id} {symbol}")
                 binance.cancel_order(id, symbol=symbol)
 
-            if order['filled']:
-                holding = get_holding_coin()
-
             if order['status'] == 'closed':
                 break
 
@@ -154,7 +155,8 @@ def buy_coin(coin):
             # Don't bother continuing if buy failed
             raise TimeoutError(f"Buy of {coin} didn't get filled")
 
-        assert holding.coin == coin, holding.coin
+        holding = get_holding_coin()
+        assert holding.coin == coin, f"{holding.coin} != {coin}"
 
     print(f'Transferring {holding.coin} to {coin}...')
     if f"{holding.coin}/{coin}" not in tickers and f"{coin}/{holding.coin}" not in tickers:
