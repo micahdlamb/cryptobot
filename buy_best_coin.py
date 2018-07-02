@@ -120,7 +120,8 @@ def buy_coin(coin):
         assert holding.coin != coin, coin
 
         for i in range(-2, 2):
-            holding_amount = binance.fetch_balance()[holding.coin]['free']
+            # .999 for .1 % binance fee - not sure if needed?
+            holding_amount = binance.fetch_balance()[holding.coin]['free'] * .999
             if f"{holding.coin}/{coin}" in tickers:
                 side   = 'sell'
                 symbol = f"{holding.coin}/{coin}"
@@ -132,8 +133,8 @@ def buy_coin(coin):
                 price = tickers[symbol]['last'] * (1+i/100)
                 amount = holding_amount / price
 
-            to_usd = tickers['BTC/USDT']['last'] if symbol.endswith('/BTC') else 1
-            print(f"{side} {amount} {symbol} for ${price * to_usd}")
+            price_usdt = price * tickers['BTC/USDT']['last'] if symbol.endswith('/BTC') else price
+            print(f"{side} {amount} (${amount * price_usdt}) {symbol} at {price} (${price_usdt})")
             order = binance.create_order(symbol, 'limit', side, amount, price)
             print(order)
             id = order['id']
@@ -243,6 +244,8 @@ while True:
             try:
                 if buy != hodl:
                     buy_coin(buy.name)
+            except TimeoutError:
+                result += '...timed out'
             except:
                 result += '...failed'
                 raise
