@@ -114,23 +114,23 @@ def get_holding_coin():
     return collections.namedtuple("Holding", "coin amount amount_usdt")(*hodl)
 
 
-def buy_coin(coin):
+def buy_coin(coin, try_factors, factor_wait_minutes=120):
     def buy(coin):
         holding = get_holding_coin()
         assert holding.coin != coin, coin
 
-        for i in range(-2, 2):
+        for factor in try_factors:
             # .999 for .1 % binance fee - not sure if needed?
             holding_amount = binance.fetch_balance()[holding.coin]['free'] * .999
             if f"{holding.coin}/{coin}" in tickers:
                 side   = 'sell'
                 symbol = f"{holding.coin}/{coin}"
-                price = tickers[symbol]['last'] * (1-i/100)
+                price = tickers[symbol]['last'] * (1-factor)
                 amount = holding_amount
             else:
                 side   = 'buy'
                 symbol = f"{coin}/{holding.coin}"
-                price = tickers[symbol]['last'] * (1+i/100)
+                price = tickers[symbol]['last'] * (1+factor)
                 amount = holding_amount / price
 
             price_usdt = price * tickers['BTC/USDT']['last'] if symbol.endswith('/BTC') else price
@@ -142,7 +142,7 @@ def buy_coin(coin):
                 print(f"{order['filled']} / {order['amount']} filled")
                 if order['status'] == 'closed':
                     break
-                time.sleep(60*30)
+                time.sleep(60*factor_wait_minutes/4)
                 order = binance.fetch_order(id, symbol=symbol)
 
             else:
@@ -231,7 +231,7 @@ while True:
             btc   = next(c for c in coins if c.name == 'BTC')
             hodl  = next(c for c in coins if c.name == holding.coin) if holding.coin != 'USDT' else usdt
 
-            if best.expected > 0 and best.expected > hodl.expected + .02:
+            if best != hodl and best.expected > 0:
                 buy = best
                 result = f'{hodl.name} transferred to {best.name}'
             elif hodl.expected > 0:
@@ -243,12 +243,14 @@ while True:
 
             try:
                 if buy != hodl:
-                    buy_coin(buy.name)
+                    better_expected = buy.expected - hodl.expected
+                    buy_coin(buy.name, try_factors=np.linspace(-.02, min(.01, better_expected), 4))
             except TimeoutError:
                 result += '...timed out'
             except:
-                result += '...failed'
-                raise
+                result += '...errored'
+                import traceback
+                traceback.print_exc()
             finally:
                 print(result)
 
