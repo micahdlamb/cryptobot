@@ -54,11 +54,10 @@ def get_best_coins():
         times.append(tickers[symbol]['timestamp'] / milli_seconds_in_hour)
         assert times[-1] - times[-2] < 4.1
 
-        #print([time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(t*3600)) for t in times])
-
         # Make time in past negative
         times = [time-times[-1] for time in times]
 
+        #print([time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(t*3600)) for t in times])
         #print('RAW', symbol, prices)
 
         if symbol == 'BTC/USDT':
@@ -70,7 +69,6 @@ def get_best_coins():
                 print(f"Skipping {symbol} for bad times")
                 continue
 
-        #print('USDT', symbol, prices)
         fit_days  = [7 ,14, 30]
         fit_times  = [times [-days*6:] for days in fit_days]
         fit_prices = [prices[-days*6:] for days in fit_days]
@@ -136,10 +134,10 @@ def buy_coin(coin, try_factors, factor_wait_minutes=30):
             price_usdt = price * tickers['BTC/USDT']['last'] if symbol.endswith('/BTC') else price
             print(f"{side} {amount} (${amount * price_usdt}) {symbol} at {price} (${price_usdt})")
             order = binance.create_order(symbol, 'limit', side, amount, price)
-            print(order)
+            print(order['info'])
             id = order['id']
             for i in range(3):
-                print(f"{order['filled']} / {order['amount']} filled at factor = {factor}")
+                print(f"{order['filled']} / {order['amount']} filled at factor={round(factor, 3)}")
                 if order['status'] == 'closed':
                     break
                 time.sleep(60*factor_wait_minutes/3)
@@ -179,9 +177,7 @@ def email_myself_plots(subject, coins, log):
         plt.xticks(range(-100 * 24, 10 * 24, 24))
         for x, y, label, linestyle, marker in coin.plots:
             plt.plot(x, y, linestyle, marker=marker, label=label)
-        #x, y, *args = coin.plots[0]
-        #for a,b in zip(x,y):
-        #    plt.text(a, b, '%g' % b)
+
         plt.legend()
         buf = io.BytesIO()
         plt.savefig(buf, format='png')
@@ -238,6 +234,7 @@ while True:
                 buy = hodl
                 result = f'HODL {hodl.name}'
             else:
+                # TODO btc.expected can't be > 0 here
                 buy = btc if btc.expected > 0 else usdt
                 result = f'Fallback from {hodl.name} to {buy.name}' if buy != hodl else f'HODL {hodl.name}'
 
@@ -250,7 +247,7 @@ while True:
             except:
                 result += '...errored'
                 import traceback
-                traceback.print_exc()
+                print(traceback.format_exc()) # print_exc goes to stderr not stdout
             finally:
                 print(result)
 
