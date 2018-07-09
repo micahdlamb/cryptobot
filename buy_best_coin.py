@@ -114,7 +114,7 @@ def get_holding_coin():
     return collections.namedtuple("Holding", "coin amount amount_usdt")(*hodl)
 
 
-def buy_coin(coin, try_factors, factor_wait_minutes=120):
+def buy_coin(coin, try_factors, factor_wait_minutes=30):
     def buy(coin):
         holding = get_holding_coin()
         assert holding.coin != coin, coin
@@ -138,11 +138,11 @@ def buy_coin(coin, try_factors, factor_wait_minutes=120):
             order = binance.create_order(symbol, 'limit', side, amount, price)
             print(order)
             id = order['id']
-            for i in range(4):
-                print(f"{order['filled']} / {order['amount']} filled")
+            for i in range(3):
+                print(f"{order['filled']} / {order['amount']} filled at factor = {factor}")
                 if order['status'] == 'closed':
                     break
-                time.sleep(60*factor_wait_minutes/4)
+                time.sleep(60*factor_wait_minutes/3)
                 order = binance.fetch_order(id, symbol=symbol)
 
             else:
@@ -243,8 +243,8 @@ while True:
 
             try:
                 if buy != hodl:
-                    better_expected = buy.expected - hodl.expected
-                    buy_coin(buy.name, try_factors=np.linspace(-.02, min(.01, better_expected), 4))
+                    better = buy.expected - hodl.expected
+                    buy_coin(buy.name, try_factors=np.linspace(-.02, min(.02, better/4), 10))
             except TimeoutError:
                 result += '...timed out'
             except:
