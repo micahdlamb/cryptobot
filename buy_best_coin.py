@@ -69,7 +69,7 @@ def get_best_coins():
                 print(f"Skipping {symbol} for bad times")
                 continue
 
-        fit_days  = [7 ,14, 30]
+        fit_days  = [3, 7 ,14, 30]
         fit_times  = [times [-days*6:] for days in fit_days]
         fit_prices = [prices[-days*6:] for days in fit_days]
         fits = [np.polyfit(t, p, 2) for t,p in zip(fit_times, fit_prices)]
@@ -80,7 +80,7 @@ def get_best_coins():
         coin = Coin(symbol.split('/')[0], expected)
         coins.append(coin)
 
-        plot_times, plot_prices = fit_times[1], fit_prices[1]
+        plot_times, plot_prices = fit_times[2], fit_prices[2]
         coin.plots = [(plot_times, plot_prices, 'actual', '-', 'o')]
         for days, fit in zip(fit_days, fits):
             times = plot_times[-days*6:]
@@ -135,14 +135,14 @@ def buy_coin(coin, try_factors, factor_wait_minutes=30):
             print(f"{side} {amount} (${amount * price_usdt}) {symbol} at {price} (${price_usdt})")
             order = binance.create_order(symbol, 'limit', side, amount, price)
             print(order['info'])
+
             id = order['id']
             for i in range(3):
+                time.sleep(60*factor_wait_minutes/3)
+                order = binance.fetch_order(id, symbol=symbol)
                 print(f"{order['filled']} / {order['amount']} filled at factor={round(factor, 3)}")
                 if order['status'] == 'closed':
                     break
-                time.sleep(60*factor_wait_minutes/3)
-                order = binance.fetch_order(id, symbol=symbol)
-
             else:
                 print(f"Cancelling order {id} {symbol}")
                 binance.cancel_order(id, symbol=symbol)
@@ -151,7 +151,6 @@ def buy_coin(coin, try_factors, factor_wait_minutes=30):
                 break
 
         else:
-            # Don't bother continuing if buy failed
             raise TimeoutError(f"Buy of {coin} didn't get filled")
 
         holding = get_holding_coin()
