@@ -69,7 +69,7 @@ def get_best_coins():
                 print(f"Skipping {symbol} for bad times")
                 continue
 
-        fit_days  = [3, 7 ,14, 30]
+        fit_days  = [7 ,14, 30]
         fit_times  = [times [-days*6:] for days in fit_days]
         fit_prices = [prices[-days*6:] for days in fit_days]
         fits = [np.polyfit(t, p, 2) for t,p in zip(fit_times, fit_prices)]
@@ -80,7 +80,7 @@ def get_best_coins():
         coin = Coin(symbol.split('/')[0], expected)
         coins.append(coin)
 
-        plot_times, plot_prices = fit_times[2], fit_prices[2]
+        plot_times, plot_prices = fit_times[1], fit_prices[1]
         coin.plots = [(plot_times, plot_prices, 'actual', '-', 'o')]
         for days, fit in zip(fit_days, fits):
             times = plot_times[-days*6:]
