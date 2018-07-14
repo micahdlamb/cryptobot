@@ -112,7 +112,9 @@ def get_holding_coin():
     return collections.namedtuple("Holding", "coin amount amount_usdt")(*hodl)
 
 
-def buy_coin(coin, try_factors, factor_wait_minutes=30):
+trades = []
+
+def buy_coin(coin, try_factors, factor_wait_minutes=15):
     def buy(coin):
         holding = get_holding_coin()
         assert holding.coin != coin, coin
@@ -124,11 +126,13 @@ def buy_coin(coin, try_factors, factor_wait_minutes=30):
                 side   = 'sell'
                 symbol = f"{holding.coin}/{coin}"
                 price = tickers[symbol]['last'] * (1-factor)
+                price = max(price, binance.fetch_ticker(symbol)['last'])
                 amount = holding_amount
             else:
                 side   = 'buy'
                 symbol = f"{coin}/{holding.coin}"
                 price = tickers[symbol]['last'] * (1+factor)
+                price = min(price, binance.fetch_ticker(symbol)['last'])
                 amount = holding_amount / price
 
             price_usdt = price * tickers['BTC/USDT']['last'] if symbol.endswith('/BTC') else price
@@ -148,6 +152,7 @@ def buy_coin(coin, try_factors, factor_wait_minutes=30):
                 binance.cancel_order(id, symbol=symbol)
 
             if order['status'] == 'closed':
+                trades.append(order['info'])
                 break
 
         else:
@@ -167,6 +172,8 @@ def email_myself_plots(subject, coins, log):
     msg['Subject'] = subject
     results = '\n'.join(f"{coin.name} {coin.expected}" for coin in coins)
     msg.set_content(results)
+
+    history = '<br>'.join(f"{t['side']} {t[symbol]} at {t['price']}" for t in reversed(trades))
 
     imgs = ""
     bufs = []
@@ -188,7 +195,7 @@ def email_myself_plots(subject, coins, log):
         bufs.append((cid, buf))
         imgs += f"<img src='cid:{cid[1:-1]}'>"
 
-    msg.add_alternative(f"<html><body>{imgs}<br><pre>{log}</pre></body></html>", subtype='html')
+    msg.add_alternative(f"<html><body>{history}<br>{imgs}<br><pre>{log}</pre></body></html>", subtype='html')
     for cid, buf in bufs:
         msg.get_payload()[1].add_related(buf.read(), "image", "png", cid=cid)
 
@@ -251,11 +258,11 @@ while True:
                 print(result)
 
                 # Show top 3 coins + BTC + hodl
-                plot_coins = coins[:3]
+                plot_coins = coins[:2]
                 if btc not in plot_coins:
                     plot_coins.append(btc)
-                if hodl != usdt and hodl not in plot_coins:
-                    plot_coins.append(hodl)
+                #if hodl != usdt and hodl not in plot_coins:
+                #    plot_coins.append(hodl)
 
                 email_myself_plots(result, plot_coins, log.getvalue())
 
