@@ -101,6 +101,7 @@ def get_best_coins(coins):
         coin.gain = (coin.expected_usdt - price_usdt) / price_usdt
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
+    print('\n'.join(f"{coin.name}: {coin.gain}" for coin in coins[:2]))
     return coins
 
 
@@ -201,7 +202,7 @@ def email_myself_plots(subject, coins, log):
         bufs.append((cid, buf))
         imgs += f"<img src='cid:{cid[1:-1]}'>"
 
-    msg.add_alternative(f"<html><body>{history}<br>{imgs}<br><pre>{log}</pre></body></html>", subtype='html')
+    msg.add_alternative(f"<html><body>{history}<br><br>{imgs}<br><pre>{log}</pre></body></html>", subtype='html')
     for cid, buf in bufs:
         msg.get_payload()[1].add_related(buf.read(), "image", "png", cid=cid)
 
@@ -244,7 +245,7 @@ while True:
                     try:
                         result = f"{from_coin} -> {best.name}"
                         better = best.gain - hodl.gain
-                        try_factors = np.linspace(-.02, min(.02, better/4), 8)
+                        try_factors = np.linspace(-.01, min(.01, better/6), 6)
                         direct_buy = f"{hodl.name}/{best.name}" in tickers or f"{best.name}/{hodl.name}" in tickers
                         buy_coin(hodl.name, best.name if direct_buy else 'BTC', try_factors=try_factors)
                         if not direct_buy:
@@ -280,9 +281,9 @@ while True:
         msg.set_content(error)
         email_myself(msg)
 
-    # Prevent getting an email more than once every 4 hours
+    # Not really needed but just in case...
     loop_hours = (time.time() - start_time) / 3600
-    if loop_hours < 4:
-        time.sleep(3600*(4 - loop_hours))
+    if loop_hours < 1:
+        time.sleep(3600*(1 - loop_hours))
 
     print('-'*30 + '\n')
