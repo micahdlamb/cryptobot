@@ -101,7 +101,7 @@ def get_best_coins(coins):
         coin.gain = (coin.expected_usdt - price_usdt) / price_usdt
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
-    print('\n'.join(f"{coin.name}: {coin.gain}" for coin in coins[:2]))
+    print('\n'.join(f"{coin.name}: {coin.gain}" for coin in coins[:4]))
     return coins
 
 
@@ -121,9 +121,9 @@ def get_holding_coin():
         if amount:
             print(f"WARNING {amount} {coin} is used")
     balance = [(coin, amount) for coin, amount in balance['free'].items() if amount]
-    balance = [(coin, amount, to_usdt(coin, amount)) for coin, amount in balance]
+    balance = [(coin, amount, to_usdt(coin, amount), to_btc(coin, amount)) for coin, amount in balance]
     hodl = max(balance, key=lambda item: item[2])
-    return collections.namedtuple("Holding", "coin amount amount_usdt")(*hodl)
+    return collections.namedtuple("Holding", "coin amount amount_usdt amount_btc")(*hodl)
 
 
 trades = []
@@ -154,8 +154,8 @@ def buy_coin(from_coin, coin, try_factors, factor_wait_minutes=15):
         print(order['info'])
 
         id = order['id']
-        for i in range(3):
-            time.sleep(60*factor_wait_minutes/3)
+        for i in range(4):
+            time.sleep(60*factor_wait_minutes/4)
             order = binance.fetch_order(id, symbol=symbol)
             print(f"{order['filled']} / {order['amount']} filled at factor={round(factor, 3)}")
             if order['status'] == 'closed':
@@ -176,7 +176,11 @@ def buy_coin(from_coin, coin, try_factors, factor_wait_minutes=15):
 
 def email_myself_plots(subject, coins, log):
     msg = EmailMessage()
-    msg['Subject'] = subject
+
+    holding = get_holding_coin()
+    balance = f" (${holding.amount_usdt} ₿{holding.amount_btc})"
+
+    msg['Subject'] = subject+balance
     results = '\n'.join(f"{coin.name} {coin.gain}" for coin in coins)
     msg.set_content(results)
 
@@ -202,7 +206,7 @@ def email_myself_plots(subject, coins, log):
         bufs.append((cid, buf))
         imgs += f"<img src='cid:{cid[1:-1]}'>"
 
-    msg.add_alternative(f"<html><body>{history}<br><br>{imgs}<br><pre>{log}</pre></body></html>", subtype='html')
+    msg.add_alternative(f"<html><body>{history}<hr>{imgs}<hr><pre>{log}</pre></body></html>", subtype='html')
     for cid, buf in bufs:
         msg.get_payload()[1].add_related(buf.read(), "image", "png", cid=cid)
 
@@ -235,7 +239,7 @@ while True:
             from_coin = holding.coin
             result    = None
             coins = get_coin_forecasts()
-            for i in range(16):
+            for i in range(24):
                 coins = get_best_coins(coins)
                 best  = coins[0]
                 btc   = next(c for c in coins if c.name == 'BTC')
@@ -245,7 +249,7 @@ while True:
                     try:
                         result = f"{from_coin} -> {best.name}"
                         better = best.gain - hodl.gain
-                        try_factors = np.linspace(-.01, min(.01, better/6), 6)
+                        try_factors = np.linspace(-.01, min(.005, better/5), 6)
                         direct_buy = f"{hodl.name}/{best.name}" in tickers or f"{best.name}/{hodl.name}" in tickers
                         buy_coin(hodl.name, best.name if direct_buy else 'BTC', try_factors=try_factors)
                         if not direct_buy:
@@ -260,13 +264,13 @@ while True:
                         print(traceback.format_exc()) # print_exc goes to stderr not stdout
                     break
 
-                time.sleep(15*60)
+                time.sleep(10*60)
 
             result = result or f'HODL {hodl.name}'
             print(result)
 
             # Show top coins + BTC
-            plot_coins = [coin for coin in coins if hasattr(coin, 'plots')][:2]
+            plot_coins = [coin for coin in coins if hasattr(coin, 'plots')][:1]
             if btc not in plot_coins:
                 plot_coins.append(btc)
 
