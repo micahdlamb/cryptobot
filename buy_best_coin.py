@@ -5,7 +5,7 @@ Create test function to run code over history and create a plot of balance / tim
 Use hill search to find best parameters.
 """
 
-import os, sys, time, collections, io, contextlib
+import os, sys, time, collections, io, contextlib, math
 import smtplib
 from email.message import EmailMessage
 from email.utils import make_msgid
@@ -36,6 +36,16 @@ def get_symbols():
     symbols = [symbol for symbol in tickers if keep(symbol)]
     symbols.insert(0, symbols.pop(symbols.index('BTC/USDT'))) # Used to covert BTC to USDT for later coins
     return symbols
+
+
+def get_current_price_usdt(coin):
+    btc_to_usdt = tickers['BTC/USDT']['last']
+    if coin == 'BTC':
+        return btc_to_usdt
+    elif coin == 'USDT':
+        return 1
+    else:
+        return tickers[f"{coin}/BTC"]['last'] * btc_to_usdt
 
 
 def get_coin_forecasts():
@@ -70,7 +80,13 @@ def get_coin_forecasts():
         predict_time = times[-1] + 4
         expected_usdt = np.average([np.polyval(fit, predict_time) for fit in fits])
 
-        coin = Coin(symbol.split('/')[0], expected_usdt) # coin.gain set in get_best_coins
+        # Make expected price more realistic...
+        name = symbol.split('/')[0]
+        current_usdt = get_current_price_usdt(name)
+        difference = expected_usdt - current_usdt
+        expected_usdt = current_usdt + difference/3
+
+        coin = Coin(name, expected_usdt) # coin.gain set in get_best_coins
         coins.append(coin)
 
         plot_times, plot_prices = fit_times[1], fit_prices[1]
@@ -85,19 +101,8 @@ def get_coin_forecasts():
 
 def get_best_coins(coins):
     print('Checking coin tickers to find best coin to buy...')
-
-    global tickers
-    tickers = binance.fetch_tickers()
-    btc_to_usdt = tickers['BTC/USDT']['last']
     for coin in coins:
-        if coin.name == 'BTC':
-            price_usdt = btc_to_usdt
-        elif coin.name == 'USDT':
-            price_usdt = 1
-        else:
-            symbol = f"{coin.name}/BTC"
-            price_usdt = tickers[symbol]['last'] * btc_to_usdt
-
+        price_usdt = get_current_price_usdt(coin.name)
         coin.gain = (coin.expected_usdt - price_usdt) / price_usdt
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
@@ -240,6 +245,7 @@ while True:
             result    = None
             coins = get_coin_forecasts()
             for i in range(24):
+                tickers = binance.fetch_tickers()
                 coins = get_best_coins(coins)
                 best  = coins[0]
                 btc   = next(c for c in coins if c.name == 'BTC')
@@ -249,7 +255,7 @@ while True:
                     try:
                         result = f"{from_coin} -> {best.name}"
                         better = best.gain - hodl.gain
-                        try_factors = np.linspace(-.01, min(.005, better/5), 6)
+                        try_factors = np.linspace(-.01, min(.005, better/3), 6)
                         direct_buy = f"{hodl.name}/{best.name}" in tickers or f"{best.name}/{hodl.name}" in tickers
                         buy_coin(hodl.name, best.name if direct_buy else 'BTC', try_factors=try_factors)
                         if not direct_buy:
