@@ -23,39 +23,14 @@ binance = ccxt.binance({
 })
 
 
-def get_symbols():
-    def keep(symbol):
-        # Not sure why these are missing the /
-        if '/' not in symbol:
-            print(f'Skipping {symbol} for missing /')
-            return False
-        coin1, coin2 = symbol.split('/')
-        if coin2 == 'USDT': return True
-        if coin2 == 'BTC':  return coin1+'/USDT' not in tickers
-
-    symbols = [symbol for symbol in tickers if keep(symbol)]
-    symbols.insert(0, symbols.pop(symbols.index('BTC/USDT'))) # Used to covert BTC to USDT for later coins
-    return symbols
-
-
-def get_current_price_usdt(coin):
-    btc_to_usdt = tickers['BTC/USDT']['last']
-    if coin == 'BTC':
-        return btc_to_usdt
-    elif coin == 'USDT':
-        return 1
-    else:
-        return tickers[f"{coin}/BTC"]['last'] * btc_to_usdt
-
-
 def get_coin_forecasts():
     print('Forecasting coin prices...')
-
-    class Coin(collections.namedtuple("Coin", "name expected_usdt")): pass
-    coins = [Coin("USDT", 1)]
-    for symbol in get_symbols():
+    class Coin(collections.namedtuple("Coin", "name symbol expected")): pass
+    coins = []
+    symbols = ['BTC/USDT'] + [symbol for symbol in tickers if symbol.endswith('/BTC')]
+    for symbol in symbols:
         ohlcv = binance.fetch_ohlcv(symbol, f'4h', limit=30*6)
-        if len(ohlcv) != 30*6:
+        if len(ohlcv) < 30*4:
             print(f"Skipping {symbol} for missing data. len(ohlcv)={len(ohlcv)}")
             continue
         prices = [candle[3] for candle in ohlcv]
@@ -64,29 +39,20 @@ def get_coin_forecasts():
         # Make time in past negative
         times = [time-times[-1] for time in times]
 
-        if symbol == 'BTC/USDT':
-            btc_to_usd = prices
-            btc_times  = times
-        elif '/BTC' in symbol:
-            prices = [a*b for a,b in zip(prices, btc_to_usd)]
-            if any(abs(a-b) > 2 for a,b in zip(times, btc_times)):
-                print(f"Skipping {symbol} for bad times")
-                continue
-
         fit_days  = [7 ,14, 30]
         fit_times  = [times [-days*6:] for days in fit_days]
         fit_prices = [prices[-days*6:] for days in fit_days]
         fits = [np.polyfit(t, p, 2) for t,p in zip(fit_times, fit_prices)]
         predict_time = times[-1] + 4
-        expected_usdt = np.average([np.polyval(fit, predict_time) for fit in fits])
+        expected = np.average([np.polyval(fit, predict_time) for fit in fits])
 
         # Make expected price more realistic...
-        name = symbol.split('/')[0]
-        current_usdt = get_current_price_usdt(name)
-        difference = expected_usdt - current_usdt
-        expected_usdt = current_usdt + difference/3
+        name       = symbol.split('/')[0]
+        current    = tickers[symbol]['last']
+        difference = expected - current
+        expected   = current + difference/3
 
-        coin = Coin(name, expected_usdt) # coin.gain set in get_best_coins
+        coin = Coin(name, symbol, expected) # coin.gain set in get_best_coins
         coins.append(coin)
 
         plot_times, plot_prices = fit_times[1], fit_prices[1]
@@ -102,8 +68,8 @@ def get_coin_forecasts():
 def get_best_coins(coins):
     print('Checking coin tickers to find best coin to buy...')
     for coin in coins:
-        price_usdt = get_current_price_usdt(coin.name)
-        coin.gain = (coin.expected_usdt - price_usdt) / price_usdt
+        price = tickers[coin.symbol]['last']
+        coin.gain = (coin.expected - price) / price
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
     print('\n'.join(f"{coin.name}: {coin.gain}" for coin in coins[:4]))
@@ -153,8 +119,7 @@ def buy_coin(from_coin, coin, try_factors, factor_wait_minutes=15):
             price = min(price, binance.fetch_ticker(symbol)['last'])
             amount = holding_amount / price
 
-        price_usdt = price * tickers['BTC/USDT']['last'] if symbol.endswith('/BTC') else price
-        print(f"{side} {amount} (${amount * price_usdt}) {symbol} at {price} (${price_usdt})")
+        print(f"{side} {amount} {symbol} at {price}")
         order = binance.create_order(symbol, 'limit', side, amount, price)
         print(order['info'])
 
@@ -183,7 +148,7 @@ def email_myself_plots(subject, coins, log):
     msg = EmailMessage()
 
     holding = get_holding_coin()
-    balance = f" (${holding.amount_usdt} ₿{holding.amount_btc})"
+    balance = f" ${round(holding.amount_usdt)} ₿{round(holding.amount_btc, 5)}"
 
     msg['Subject'] = subject+balance
     results = '\n'.join(f"{coin.name} {coin.gain}" for coin in coins)
@@ -248,8 +213,8 @@ while True:
                 tickers = binance.fetch_tickers()
                 coins = get_best_coins(coins)
                 best  = coins[0]
-                btc   = next(c for c in coins if c.name == 'BTC')
                 hodl  = next(c for c in coins if c.name == holding.coin)
+                btc   = next(c for c in coins if c.name == 'BTC')
 
                 if best != hodl:
                     try:
