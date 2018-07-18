@@ -3,6 +3,13 @@ TODO
 Implement calculate_expected that takes a coin parameters and history. Long term time is based on length of list.
 Create test function to run code over history and create a plot of balance / time + text of holding coin at each point.
 Use hill search to find best parameters.
+
+Ideas to try:
+Look into how altcoin and BTC change relative to each other
+Show latest tickers in plot.  Show times of buys and sells.
+Make sure to show plots all coins involved in orders
+Always have a sell order going for alt coins
+
 """
 
 import os, sys, time, collections, io, contextlib, math
@@ -39,7 +46,7 @@ def get_coin_forecasts():
         # Make time in past negative
         times = [time-times[-1] for time in times]
 
-        fit_days  = [7 ,14, 30]
+        fit_days  = [3, 7 ,14, 30]
         fit_times  = [times [-days*6:] for days in fit_days]
         fit_prices = [prices[-days*6:] for days in fit_days]
         fits = [np.polyfit(t, p, 2) for t,p in zip(fit_times, fit_prices)]
@@ -50,7 +57,7 @@ def get_coin_forecasts():
         name       = symbol.split('/')[0]
         current    = tickers[symbol]['last']
         difference = expected - current
-        expected   = current + difference/3
+        expected   = current + difference/2
 
         coin = Coin(name, symbol, expected) # coin.gain set in get_best_coins
         coins.append(coin)
@@ -220,7 +227,7 @@ while True:
                     try:
                         result = f"{from_coin} -> {best.name}"
                         better = best.gain - hodl.gain
-                        try_factors = np.linspace(-.01, min(.005, better/3), 6)
+                        try_factors = np.linspace(-.015, min(.005, better/3), 8)
                         direct_buy = f"{hodl.name}/{best.name}" in tickers or f"{best.name}/{hodl.name}" in tickers
                         buy_coin(hodl.name, best.name if direct_buy else 'BTC', try_factors=try_factors)
                         if not direct_buy:
