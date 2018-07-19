@@ -7,9 +7,7 @@ Use hill search to find best parameters.
 Ideas to try:
 Look into how altcoin and BTC change relative to each other
 Show latest tickers in plot.  Show times of buys and sells.
-Make sure to show plots all coins involved in orders
 Always have a sell order going for alt coins
-
 """
 
 import os, sys, time, collections, io, contextlib, math
@@ -29,10 +27,11 @@ binance = ccxt.binance({
     'secret': os.environ['binance_secret']
 })
 
+milli_seconds_in_hour = 60*60*1000
 
 def get_coin_forecasts():
     print('Forecasting coin prices...')
-    class Coin(collections.namedtuple("Coin", "name symbol expected")): pass
+    class Coin(collections.namedtuple("Coin", "name symbol expected_lt")): pass
     coins = []
     symbols = ['BTC/USDT'] + [symbol for symbol in tickers if symbol.endswith('/BTC')]
     for symbol in symbols:
@@ -41,10 +40,10 @@ def get_coin_forecasts():
             print(f"Skipping {symbol} for missing data. len(ohlcv)={len(ohlcv)}")
             continue
         prices = [candle[3] for candle in ohlcv]
-        milli_seconds_in_hour = 60*60*1000
-        times = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
+        times  = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
         # Make time in past negative
-        times = [time-times[-1] for time in times]
+        zero_time = times[-1]
+        times = [time-zero_time for time in times]
 
         fit_days  = [3, 7 ,14, 30]
         fit_times  = [times [-days*6:] for days in fit_days]
@@ -54,32 +53,45 @@ def get_coin_forecasts():
         expected = np.average([np.polyval(fit, predict_time) for fit in fits])
 
         # Make expected price more realistic...
-        name       = symbol.split('/')[0]
-        current    = tickers[symbol]['last']
-        difference = expected - current
-        expected   = current + difference/2
+        #current    = tickers[symbol]['last']
+        #difference = expected - current
+        #expected   = current + difference/2
 
+        name = symbol.split('/')[0]
         coin = Coin(name, symbol, expected) # coin.gain set in get_best_coins
         coins.append(coin)
 
-        plot_times, plot_prices = fit_times[1], fit_prices[1]
-        coin.plots = [(plot_times, plot_prices, 'actual', '-', 'o')]
+        plot_times, plot_prices = fit_times[0], fit_prices[0]
+        coin.zero_time = zero_time
+        coin.plots = {"actual": (plot_times, plot_prices, '-', 'o')}
         for days, fit in zip(fit_days, fits):
             times = plot_times[-days*6:]
             fit_times = np.linspace(times[0], predict_time, len(times) * 2)
-            coin.plots.append((fit_times, [np.polyval(fit, time) for time in fit_times], f"{days} day fit", '--', None))
+            coin.plots[f"{days} day fit"] = (fit_times, [np.polyval(fit, time) for time in fit_times], '--', None)
 
     return coins
 
 
 def get_best_coins(coins):
-    print('Checking coin tickers to find best coin to buy...')
+    print('Looking for best coins...')
     for coin in coins:
         price = tickers[coin.symbol]['last']
-        coin.gain = (coin.expected - price) / price
+        coin.gain_lt = (coin.expected_lt - price) / price
+
+        ohlcv = binance.fetch_ohlcv(coin.symbol, f'5m', limit=12)
+        prices = [candle[3] for candle in ohlcv]
+        times  = [candle[0] / milli_seconds_in_hour - coin.zero_time for candle in ohlcv]
+        fit = np.polyfit(times, prices, 2)
+        expected_st = np.polyval(fit, times[-1]+1)
+        coin.gain_st = (expected_st - price) / price
+        # Cap out when spikes occur.  Its probably too late to get the gains...
+        coin.gain_st = min(coin.gain_st, .03)
+
+        coin.gain = (coin.gain_lt + coin.gain_st) / 2
+        coin.plots['actual st'] = (times, prices, '-', None)
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
-    print('\n'.join(f"{coin.name}: {coin.gain}" for coin in coins[:4]))
+    print('\n'.join(f"{coin.name}: {coin.gain} lt={coin.gain_lt} st={coin.gain_st}" for coin in coins[:4]))
     return coins
 
 
@@ -106,7 +118,7 @@ def get_holding_coin():
 
 trades = []
 
-def buy_coin(from_coin, coin, try_factors, factor_wait_minutes=15):
+def buy_coin(from_coin, coin, try_factors, factor_wait_minutes=10):
     assert from_coin != coin, coin
     print(f'Transferring {from_coin} to {coin}...')
 
@@ -131,8 +143,8 @@ def buy_coin(from_coin, coin, try_factors, factor_wait_minutes=15):
         print(order['info'])
 
         id = order['id']
-        for i in range(4):
-            time.sleep(60*factor_wait_minutes/4)
+        for i in range(3):
+            time.sleep(60*factor_wait_minutes/3)
             order = binance.fetch_order(id, symbol=symbol)
             print(f"{order['filled']} / {order['amount']} filled at factor={round(factor, 3)}")
             if order['status'] == 'closed':
@@ -169,8 +181,8 @@ def email_myself_plots(subject, coins, log):
         plt.title(f"{coin.name}  {round(coin.gain * 100, 2)}%")
         plt.xlabel("hours")
         plt.xticks(range(-100 * 24, 10 * 24, 24))
-        for x, y, label, linestyle, marker in coin.plots:
-            plt.plot(x, y, linestyle=linestyle, marker=marker, label=label)
+        for name, (x, y, linestyle, marker) in coin.plots.items():
+            plt.plot(x, y, linestyle=linestyle, marker=marker, label=name)
 
         plt.legend()
         buf = io.BytesIO()
@@ -211,23 +223,22 @@ while True:
     start_time = time.time()
     try:
         with io.StringIO() as log, contextlib.redirect_stdout(Tee(log, sys.stdout)):
-            tickers   = binance.fetch_tickers()
-            holding   = get_holding_coin()
+            tickers = binance.fetch_tickers()
+            holding = get_holding_coin()
             from_coin = holding.coin
-            result    = None
+            result = None
             coins = get_coin_forecasts()
             for i in range(24):
                 tickers = binance.fetch_tickers()
                 coins = get_best_coins(coins)
                 best  = coins[0]
                 hodl  = next(c for c in coins if c.name == holding.coin)
-                btc   = next(c for c in coins if c.name == 'BTC')
 
                 if best != hodl:
                     try:
                         result = f"{from_coin} -> {best.name}"
                         better = best.gain - hodl.gain
-                        try_factors = np.linspace(-.015, min(.005, better/3), 8)
+                        try_factors = np.linspace(-.005, min(.005, better/8), 6)
                         direct_buy = f"{hodl.name}/{best.name}" in tickers or f"{best.name}/{hodl.name}" in tickers
                         buy_coin(hodl.name, best.name if direct_buy else 'BTC', try_factors=try_factors)
                         if not direct_buy:
@@ -247,11 +258,8 @@ while True:
             result = result or f'HODL {hodl.name}'
             print(result)
 
-            # Show top coins + BTC
-            plot_coins = [coin for coin in coins if hasattr(coin, 'plots')][:1]
-            if btc not in plot_coins:
-                plot_coins.append(btc)
-
+            # Show relevant plots
+            plot_coins = [coin for coin in coins if coin.name in [from_coin, 'BTC', best.name]]
             email_myself_plots(result, plot_coins, log.getvalue())
 
     except:
