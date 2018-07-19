@@ -8,6 +8,7 @@ Ideas to try:
 Look into how altcoin and BTC change relative to each other
 Show latest tickers in plot.  Show times of buys and sells.
 Always have a sell order going for alt coins
+Investigate multiple limit orders at once
 """
 
 import os, sys, time, collections, io, contextlib, math
@@ -85,7 +86,8 @@ def get_best_coins(coins):
         expected_st = np.polyval(fit, times[-1]+1)
         coin.gain_st = (expected_st - price) / price
         # Cap out when spikes occur.  Its probably too late to get the gains...
-        coin.gain_st = min(coin.gain_st, .03)
+        # TODO need to think about this...
+        coin.gain_st = max(min(coin.gain_st, .01), -.01)
 
         coin.gain = (coin.gain_lt + coin.gain_st) / 2
         coin.plots['actual st'] = (times, prices, '-', None)
