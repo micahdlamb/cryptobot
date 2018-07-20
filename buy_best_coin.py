@@ -62,7 +62,7 @@ def get_coin_forecasts():
         coin = Coin(name, symbol, expected) # coin.gain set in get_best_coins
         coins.append(coin)
 
-        plot_times, plot_prices = fit_times[0], fit_prices[0]
+        plot_times, plot_prices = times[-6:], prices[-6:]
         coin.zero_time = zero_time
         coin.plots = {"actual": (plot_times, plot_prices, '-', 'o')}
         for days, fit in zip(fit_days, fits):
@@ -79,7 +79,7 @@ def get_best_coins(coins):
         price = tickers[coin.symbol]['last']
         coin.gain_lt = (coin.expected_lt - price) / price
 
-        ohlcv = binance.fetch_ohlcv(coin.symbol, f'5m', limit=12)
+        ohlcv = binance.fetch_ohlcv(coin.symbol, f'5m', limit=24)
         prices = [candle[3] for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour - coin.zero_time for candle in ohlcv]
         fit = np.polyfit(times, prices, 2)
@@ -87,7 +87,7 @@ def get_best_coins(coins):
         coin.gain_st = (expected_st - price) / price
         # Cap out when spikes occur.  Its probably too late to get the gains...
         # TODO need to think about this...
-        coin.gain_st = max(min(coin.gain_st, .01), -.01)
+        coin.gain_st = max(min(coin.gain_st, .015), -.015)
 
         coin.gain = (coin.gain_lt + coin.gain_st) / 2
         coin.plots['actual st'] = (times, prices, '-', None)
@@ -97,17 +97,26 @@ def get_best_coins(coins):
     return coins
 
 
+def to_btc(coin, amount):
+    if coin == 'BTC':
+        return amount
+    if coin == 'USDT':
+        return amount / tickers["BTC/USDT"]['last']
+    return amount * tickers[f"{coin}/BTC"]['last']
+
+
+def to_usdt(coin, amount):
+    return to_btc(coin, amount) * tickers["BTC/USDT"]['last']
+
+
+def get_balance():
+    balance = binance.fetch_balance()
+    btc  = sum(to_btc (coin, amount) for coin, amount in balance['total'].items() if amount)
+    usdt = sum(to_usdt(coin, amount) for coin, amount in balance['total'].items() if amount)
+    return collections.namedtuple("Balance", "btc usdt")(btc, usdt)
+
+
 def get_holding_coin():
-    def to_btc(coin, amount):
-        if coin == 'BTC':
-            return amount
-        if coin == 'USDT':
-            return amount / tickers["BTC/USDT"]['last']
-        return amount * tickers[f"{coin}/BTC"]['last']
-
-    def to_usdt(coin, amount):
-        return to_btc(coin, amount) * tickers["BTC/USDT"]['last']
-
     balance = binance.fetch_balance()
     for coin, amount in balance['used'].items():
         if amount:
@@ -157,6 +166,7 @@ def buy_coin(from_coin, coin, try_factors, factor_wait_minutes=10):
 
         if order['status'] == 'closed':
             trades.append(order['info'])
+            print('')
             break
 
     else:
@@ -168,8 +178,8 @@ def buy_coin(from_coin, coin, try_factors, factor_wait_minutes=10):
 def email_myself_plots(subject, coins, log):
     msg = EmailMessage()
 
-    holding = get_holding_coin()
-    balance = f" ${round(holding.amount_usdt)} ₿{round(holding.amount_btc, 5)}"
+    balance = get_balance()
+    balance = f"₿{round(balance.btc, 5)} ${round(balance.usdt)}"
 
     msg['Subject'] = subject+balance
     results = '\n'.join(f"{coin.name} {coin.gain}" for coin in coins)
@@ -240,7 +250,7 @@ while True:
                     try:
                         result = f"{from_coin} -> {best.name}"
                         better = best.gain - hodl.gain
-                        try_factors = np.linspace(-.005, min(.005, better/8), 6)
+                        try_factors = np.linspace(-.003, min(.003, better/3), 6)
                         direct_buy = f"{hodl.name}/{best.name}" in tickers or f"{best.name}/{hodl.name}" in tickers
                         buy_coin(hodl.name, best.name if direct_buy else 'BTC', try_factors=try_factors)
                         if not direct_buy:
