@@ -85,7 +85,7 @@ def get_best_coins(coins):
         ohlcv = binance.fetch_ohlcv(coin.symbol, f'5m', limit=36)
         prices = [np.average(candle[1:-1]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour - coin.zero_time for candle in ohlcv]
-        fit = np.polyfit(times, prices, 2)
+        fit = np.polyfit(times, prices, 1) # TODO 1 or 2 here?
         expected_st    = np.polyval(fit, times[-1]+1)
         price_on_curve = np.polyval(fit, times[-1])
         coin.gain_st = (expected_st - price_on_curve) / price
@@ -96,6 +96,8 @@ def get_best_coins(coins):
         coin.gain = (coin.gain_lt + coin.gain_st) / 2
         coin.gain_per_hour = np.polyfit(times[-6:], prices[-6:], 1)[0] / price
         coin.plots['actual st'] = (times, prices, '-', None)
+        fit_prices = [np.polyval(fit, time) for time in times]
+        coin.plots['fit st'] = (times, fit_prices, '-', None)
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
     rnd = lambda value: round(value, 4)
@@ -259,10 +261,10 @@ while True:
                         result = f"{from_coin} -> {best.name}"
                         #direct_buy = f"{hodl.name}/{best.name}" in tickers or f"{best.name}/{hodl.name}" in tickers
                         if hodl.name == 'BTC':
-                            buy_coin = best.name
+                            buy       = best.name
                             good_rate = -best.gain_per_hour
                         else:
-                            buy_coin = 'BTC'
+                            buy       = 'BTC'
                             good_rate = hodl.gain_per_hour
 
                         good_rate  = clamp(good_rate, -.03, .03)
@@ -272,9 +274,9 @@ while True:
                         end        = mix(factor, .015,   .003)
 
                         try_factors = np.linspace(start, end, int(num_tries))
-                        buy_coin(hodl.name, buy_coin, try_factors=try_factors)
+                        buy_coin(hodl.name, buy, try_factors=try_factors)
 
-                        if buy_coin != best.name:
+                        if buy != best.name:
                             holding = get_holding_coin()
                             continue
 
