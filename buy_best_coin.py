@@ -65,7 +65,7 @@ def get_coin_forecasts():
         coin = Coin(name, symbol, expected) # coin.gain set in get_best_coins
         coins.append(coin)
 
-        plot_times, plot_prices = times[-24:], prices[-24:]
+        plot_times, plot_prices = times[-12:], prices[-12:]
         coin.zero_time = zero_time
         coin.plots = {"actual": (plot_times, plot_prices, '-', 'o')}
         for days, fit in zip(fit_days, fits):
@@ -82,7 +82,7 @@ def get_best_coins(coins):
         price = tickers[coin.symbol]['last']
         coin.gain_lt = (coin.expected_lt - price) / price
 
-        ohlcv = binance.fetch_ohlcv(coin.symbol, f'5m', limit=36)
+        ohlcv = binance.fetch_ohlcv(coin.symbol, f'5m', limit=24)
         prices = [np.average(candle[1:-1]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour - coin.zero_time for candle in ohlcv]
         fit = np.polyfit(times, prices, 1) # TODO 1 or 2 here?
@@ -90,7 +90,6 @@ def get_best_coins(coins):
         price_on_curve = np.polyval(fit, times[-1])
         coin.gain_st = (expected_st - price_on_curve) / price
         # Cap out when spikes occur.  Its probably too late to get the gains...
-        # TODO need to think about this...
         coin.gain_st = max(min(coin.gain_st, .02), -.02)
 
         coin.gain = (coin.gain_lt + coin.gain_st) / 2
