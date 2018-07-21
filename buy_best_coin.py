@@ -29,6 +29,9 @@ binance = ccxt.binance({
 })
 
 milli_seconds_in_hour = 60*60*1000
+clamp = lambda value,  frm, to: max(frm, min(to, value))
+mix   = lambda factor, frm, to: frm + (to - frm) * factor
+unmix = lambda value,  frm, to: (value - frm) / (to - frm)
 
 def get_coin_forecasts():
     print('Forecasting coin prices...')
@@ -36,20 +39,20 @@ def get_coin_forecasts():
     coins = []
     symbols = ['BTC/USDT'] + [symbol for symbol in tickers if symbol.endswith('/BTC')]
     for symbol in symbols:
-        ohlcv = binance.fetch_ohlcv(symbol, f'4h', limit=30*6)
-        if len(ohlcv) < 30*4:
+        ohlcv = binance.fetch_ohlcv(symbol, f'1h', limit=14*24)
+        if len(ohlcv) < 14*24/2:
             print(f"Skipping {symbol} for missing data. len(ohlcv)={len(ohlcv)}")
             continue
-        prices = [candle[3] for candle in ohlcv]
+        prices = [np.average(candle[1:-1]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
         # Make time in past negative
         zero_time = times[-1]
         times = [time-zero_time for time in times]
 
-        fit_days  = [3, 7 ,14, 30]
-        fit_times  = [times [-days*6:] for days in fit_days]
-        fit_prices = [prices[-days*6:] for days in fit_days]
-        fits = [np.polyfit(t, p, 2) for t,p in zip(fit_times, fit_prices)]
+        fit_days  = [3, 7 ,14]
+        fit_times  = [times [-days*24:] for days in fit_days]
+        fit_prices = [prices[-days*24:] for days in fit_days]
+        fits = [np.polyfit(t, p, 3) for t,p in zip(fit_times, fit_prices)]
         predict_time = times[-1] + 4
         expected = np.average([np.polyval(fit, predict_time) for fit in fits])
 
@@ -62,11 +65,11 @@ def get_coin_forecasts():
         coin = Coin(name, symbol, expected) # coin.gain set in get_best_coins
         coins.append(coin)
 
-        plot_times, plot_prices = times[-6:], prices[-6:]
+        plot_times, plot_prices = times[-24:], prices[-24:]
         coin.zero_time = zero_time
         coin.plots = {"actual": (plot_times, plot_prices, '-', 'o')}
         for days, fit in zip(fit_days, fits):
-            times = plot_times[-days*6:]
+            times = plot_times[-days*24:]
             fit_times = np.linspace(times[0], predict_time, len(times) * 2)
             coin.plots[f"{days} day fit"] = (fit_times, [np.polyval(fit, time) for time in fit_times], '--', None)
 
@@ -80,20 +83,24 @@ def get_best_coins(coins):
         coin.gain_lt = (coin.expected_lt - price) / price
 
         ohlcv = binance.fetch_ohlcv(coin.symbol, f'5m', limit=36)
-        prices = [candle[3] for candle in ohlcv]
+        prices = [np.average(candle[1:-1]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour - coin.zero_time for candle in ohlcv]
         fit = np.polyfit(times, prices, 2)
-        expected_st = np.polyval(fit, times[-1]+1)
-        coin.gain_st = (expected_st - price) / price
+        expected_st    = np.polyval(fit, times[-1]+1)
+        price_on_curve = np.polyval(fit, times[-1])
+        coin.gain_st = (expected_st - price_on_curve) / price
         # Cap out when spikes occur.  Its probably too late to get the gains...
         # TODO need to think about this...
         coin.gain_st = max(min(coin.gain_st, .02), -.02)
 
         coin.gain = (coin.gain_lt + coin.gain_st) / 2
+        coin.gain_per_hour = np.polyfit(times[-6:], prices[-6:], 1)[0] / price
         coin.plots['actual st'] = (times, prices, '-', None)
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
-    print('\n'.join(f"{coin.name}: {coin.gain} lt={coin.gain_lt} st={coin.gain_st}" for coin in coins[:4]))
+    rnd = lambda value: round(value, 4)
+    print('\n'.join(f"{coin.name}: {rnd(coin.gain)} lt={rnd(coin.gain_lt)} st={rnd(coin.gain_st)} dy/dx={rnd(coin.gain_per_hour)}"
+                    for coin in coins[:4]))
     return coins
 
 
@@ -131,7 +138,8 @@ trades = []
 
 def buy_coin(from_coin, coin, try_factors, factor_wait_minutes=10):
     assert from_coin != coin, coin
-    print(f'Transferring {from_coin} to {coin}...')
+    print(f"Transferring {from_coin} to {coin}...")
+    print(f"try_factors={try_factors}")
 
     for factor in try_factors:
         # .999 for .1 % binance fee - not sure if needed?
@@ -140,13 +148,13 @@ def buy_coin(from_coin, coin, try_factors, factor_wait_minutes=10):
             side   = 'sell'
             symbol = f"{from_coin}/{coin}"
             price = tickers[symbol]['last'] * (1-factor)
-            price = max(price, binance.fetch_ticker(symbol)['last'])
+            price = max(price, binance.fetch_ticker(symbol)['last']*.999)
             amount = holding_amount
         else:
             side   = 'buy'
             symbol = f"{coin}/{from_coin}"
             price = tickers[symbol]['last'] * (1+factor)
-            price = min(price, binance.fetch_ticker(symbol)['last'])
+            price = min(price, binance.fetch_ticker(symbol)['last']*1.001)
             amount = holding_amount / price
 
         print(f"{side} {amount} {symbol} at {price}")
@@ -192,7 +200,7 @@ def email_myself_plots(subject, coins, log):
     for coin in coins:
         plt.title(f"{coin.name}  {round(coin.gain * 100, 2)}%")
         plt.xlabel("hours")
-        plt.xticks(range(-100 * 24, 10 * 24, 24))
+        plt.xticks(range(-100 * 4, 10 * 4, 4))
         for name, (x, y, linestyle, marker) in coin.plots.items():
             plt.plot(x, y, linestyle=linestyle, marker=marker, label=name)
 
@@ -249,20 +257,36 @@ while True:
                 if best != hodl:
                     try:
                         result = f"{from_coin} -> {best.name}"
-                        better = best.gain - hodl.gain
-                        try_factors = np.linspace(-.003, min(.005, better/3), 4)
-                        direct_buy = f"{hodl.name}/{best.name}" in tickers or f"{best.name}/{hodl.name}" in tickers
-                        buy_coin(hodl.name, best.name if direct_buy else 'BTC', try_factors=try_factors)
-                        if not direct_buy:
+                        #direct_buy = f"{hodl.name}/{best.name}" in tickers or f"{best.name}/{hodl.name}" in tickers
+                        if hodl.name == 'BTC':
+                            buy_coin = best.name
+                            good_rate = -best.gain_per_hour
+                        else:
+                            buy_coin = 'BTC'
+                            good_rate = hodl.gain_per_hour
+
+                        good_rate  = clamp(good_rate, -.03, .03)
+                        factor     = unmix(good_rate, -.03, .03)
+                        num_tries  = mix(factor, 3, 6)
+                        start      = mix(factor, -.003, -.03)
+                        end        = mix(factor, .015,   .003)
+
+                        try_factors = np.linspace(start, end, int(num_tries))
+                        buy_coin(hodl.name, buy_coin, try_factors=try_factors)
+
+                        if buy_coin != best.name:
                             holding = get_holding_coin()
                             continue
+
                     except TimeoutError:
                         result += '...timed out'
                         continue
+
                     except:
                         result += '...errored'
                         import traceback
                         print(traceback.format_exc()) # print_exc goes to stderr not stdout
+
                     break
 
                 time.sleep(15*60)
