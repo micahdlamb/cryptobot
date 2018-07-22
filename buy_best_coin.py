@@ -39,8 +39,8 @@ def get_coin_forecasts():
     coins = []
     symbols = ['BTC/USDT'] + [symbol for symbol in tickers if symbol.endswith('/BTC')]
     for symbol in symbols:
-        ohlcv = binance.fetch_ohlcv(symbol, f'1h', limit=14*24)
-        if len(ohlcv) < 14*24/2:
+        ohlcv = binance.fetch_ohlcv(symbol, f'1h', limit=7*24)
+        if len(ohlcv) < 7*24/2:
             print(f"Skipping {symbol} for missing data. len(ohlcv)={len(ohlcv)}")
             continue
         prices = [np.average(candle[1:-1]) for candle in ohlcv]
@@ -49,11 +49,11 @@ def get_coin_forecasts():
         zero_time = times[-1]
         times = [time-zero_time for time in times]
 
-        fit_days  = [3, 7 ,14]
+        fit_days  = [3, 7]
         fit_times  = [times [-days*24:] for days in fit_days]
         fit_prices = [prices[-days*24:] for days in fit_days]
         fits = [np.polyfit(t, p, 3) for t,p in zip(fit_times, fit_prices)]
-        predict_time = times[-1] + 4
+        predict_time = times[-1] + 1
         expected = np.average([np.polyval(fit, predict_time) for fit in fits])
 
         # Make expected price more realistic...
@@ -65,7 +65,7 @@ def get_coin_forecasts():
         coin = Coin(name, symbol, expected) # coin.gain set in get_best_coins
         coins.append(coin)
 
-        plot_times, plot_prices = times[-12:], prices[-12:]
+        plot_times, plot_prices = times[-16:], prices[-16:]
         coin.zero_time = zero_time
         coin.plots = {"actual": (plot_times, plot_prices, '-', 'o')}
         for days, fit in zip(fit_days, fits):
