@@ -43,17 +43,17 @@ def get_coin_forecasts():
         if len(ohlcv) < 7*24/2:
             print(f"Skipping {symbol} for missing data. len(ohlcv)={len(ohlcv)}")
             continue
-        prices = [np.average(candle[1:-1]) for candle in ohlcv]
+        prices = [np.average(candle[2:-1]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
         # Make time in past negative
         zero_time = times[-1]
         times = [time-zero_time for time in times]
 
-        fit_days  = [3, 7]
+        fit_days  = [1, 3, 7]
         fit_times  = [times [-days*24:] for days in fit_days]
         fit_prices = [prices[-days*24:] for days in fit_days]
         fits = [np.polyfit(t, p, 3) for t,p in zip(fit_times, fit_prices)]
-        predict_time = times[-1] + 1
+        predict_time = times[-1] + 2
         expected = np.average([np.polyval(fit, predict_time) for fit in fits])
 
         # Make expected price more realistic...
@@ -83,14 +83,14 @@ def get_best_coins(coins):
         coin.gain_lt = (coin.expected_lt - price) / price
 
         ohlcv = binance.fetch_ohlcv(coin.symbol, f'5m', limit=24)
-        prices = [np.average(candle[1:-1]) for candle in ohlcv]
+        prices = [np.average(candle[2:-1]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour - coin.zero_time for candle in ohlcv]
         fit = np.polyfit(times, prices, 1) # TODO 1 or 2 here?
-        expected_st    = np.polyval(fit, times[-1]+1)
+        expected_st    = np.polyval(fit, times[-1]+2)
         price_on_curve = np.polyval(fit, times[-1])
         coin.gain_st = (expected_st - price_on_curve) / price
         # Cap out when spikes occur.  Its probably too late to get the gains...
-        coin.gain_st = max(min(coin.gain_st, .02), -.02)
+        coin.gain_st = max(min(coin.gain_st, .03), -.03)
 
         coin.gain = (coin.gain_lt + coin.gain_st) / 2
         coin.gain_per_hour = np.polyfit(times[-6:], prices[-6:], 1)[0] / price
