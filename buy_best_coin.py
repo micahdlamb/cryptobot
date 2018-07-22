@@ -180,17 +180,17 @@ def buy_coin(from_coin, coin, max_change=.03, max_wait_minutes=60):
         times = [candle[0]/milli_seconds_in_minute for candle in ohlcv]
         fit = np.polyfit(times, prices, 1)
         good_rate = fit[0] * good_direction
-        amplitude = (sum(abs(candle[3]-candle[2]) for candle in ohlcv) - abs(fit[0]*30)) / 6
+        amplitude = (sum(abs(candle[3]-candle[2]) for candle in ohlcv) - abs(fit[0]*30)) / len(ohlcv)
         assert amplitude > 0, amplitude
-        print(f"good rate {round(good_rate*60/current_price, 4)} amplitude {round(amplitude/current_price, 4)}")
+        print(f"good rate/hour {round(good_rate*60/current_price, 4)} amplitude {round(amplitude/current_price, 4)}")
 
         now = ticker['timestamp'] / milli_seconds_in_minute
         assert 0 <= now - times[-1] <= 5
 
         if good_rate > 0:
-            price = np.polyval(fit, now + 10) + good_direction * amplitude / 4
+            price = np.polyval(fit, now + 10) + good_direction * amplitude / 2
         else:
-            price = np.polyval(fit, now) + good_direction * amplitude / 4
+            price = np.polyval(fit, now) + good_direction * amplitude / 2
 
         # .999 for .1 % binance fee - not sure if needed?
         holding_amount = binance.fetch_balance()[from_coin]['free'] * .999
