@@ -28,7 +28,8 @@ binance = ccxt.binance({
     'secret': os.environ['binance_secret']
 })
 
-milli_seconds_in_hour = 60*60*1000
+milli_seconds_in_hour   = 1000*60*60
+milli_seconds_in_minute = 1000*60
 clamp = lambda value,  frm, to: max(frm, min(to, value))
 mix   = lambda factor, frm, to: frm + (to - frm) * factor
 unmix = lambda value,  frm, to: (value - frm) / (to - frm)
@@ -137,36 +138,79 @@ def get_holding_coin():
 
 trades = []
 
-def buy_coin(from_coin, coin, try_factors, factor_wait_minutes=10):
+def buy_coin(from_coin, coin, max_change=.03, max_wait_minutes=60):
     assert from_coin != coin, coin
     print(f"Transferring {from_coin} to {coin}...")
-    print(f"try_factors={try_factors}")
 
-    for factor in try_factors:
+    if f"{coin}/{from_coin}" in tickers:
+        side = 'buy'
+        symbol = f"{coin}/{from_coin}"
+        good_direction = -1
+
+    else:
+        side = 'sell'
+        symbol = f"{from_coin}/{coin}"
+        good_direction = 1
+
+    start_price = binance.fetch_ticker(symbol)['last']
+    start_time  = time.time()
+
+    while True:
+        if (time.time() - start_time)/60 > max_wait_minutes:
+            raise TimeoutError(f"{side} of {symbol} didn't get filled")
+
+        # Ride any spikes
+        ohlcv = binance.fetch_ohlcv(symbol, f'1m', limit=5)
+        prices = [np.average(candle[2:-1]) for candle in ohlcv]
+        times = [candle[0]/milli_seconds_in_minute for candle in ohlcv]
+        fit = np.polyfit(times, prices, 1)
+        good_rate = fit[0] * good_direction
+        if good_rate > 0:
+            time.sleep(5*60)
+            continue
+
+        ticker = binance.fetch_ticker(symbol)
+        current_price = ticker['last']
+        good_change   = good_direction * (current_price - start_price) / start_price
+        if good_change < -max_change:
+            raise TimeoutError(f"{side} of {symbol} aborted due to price change of {abs(good_change)}")
+
+        ohlcv = binance.fetch_ohlcv(symbol, f'5m', limit=6)
+        prices = [np.average(candle[2:-1]) for candle in ohlcv]
+        times = [candle[0]/milli_seconds_in_minute for candle in ohlcv]
+        fit = np.polyfit(times, prices, 1)
+        good_rate = fit[0] * good_direction
+        amplitude = (sum(abs(candle[3]-candle[2]) for candle in ohlcv) - abs(fit[0]*30)) / 6
+        assert amplitude > 0, amplitude
+        print(f"good rate {round(good_rate*60/current_price, 4)} amplitude {round(amplitude/current_price, 4)}")
+
+        now = ticker['timestamp'] / milli_seconds_in_minute
+        assert 0 <= now - times[-1] <= 5
+
+        if good_rate > 0:
+            price = np.polyval(fit, now + 10) + good_direction * amplitude / 4
+        else:
+            price = np.polyval(fit, now) + good_direction * amplitude / 4
+
         # .999 for .1 % binance fee - not sure if needed?
         holding_amount = binance.fetch_balance()[from_coin]['free'] * .999
-        if f"{from_coin}/{coin}" in tickers:
-            side   = 'sell'
-            symbol = f"{from_coin}/{coin}"
-            price = tickers[symbol]['last'] * (1-factor)
-            price = max(price, binance.fetch_ticker(symbol)['last']*.999)
-            amount = holding_amount
-        else:
-            side   = 'buy'
-            symbol = f"{coin}/{from_coin}"
-            price = tickers[symbol]['last'] * (1+factor)
-            price = min(price, binance.fetch_ticker(symbol)['last']*1.001)
+        if side == 'buy':
+            price  = min(price, current_price*1.001)
             amount = holding_amount / price
+        else:
+            price  = max(price, current_price*.999)
+            amount = holding_amount
 
-        print(f"{side} {amount} {symbol} at {price}")
+        difference = (price - current_price) / current_price
+        print(f"{side} {amount} {symbol} at {price} ({round(difference, 4)})")
         order = binance.create_order(symbol, 'limit', side, amount, price)
         print(order['info'])
 
         id = order['id']
         for i in range(3):
-            time.sleep(60*factor_wait_minutes/3)
+            time.sleep(5*60)
             order = binance.fetch_order(id, symbol=symbol)
-            print(f"{order['filled']} / {order['amount']} filled at factor={round(factor, 3)}")
+            print(f"{order['filled']} / {order['amount']} filled")
             if order['status'] == 'closed':
                 break
         else:
@@ -176,12 +220,7 @@ def buy_coin(from_coin, coin, try_factors, factor_wait_minutes=10):
         if order['status'] == 'closed':
             trades.append(order['info'])
             print('')
-            break
-
-    else:
-        raise TimeoutError(f"Buy of {coin} didn't get filled")
-
-    return order
+            return order
 
 
 def email_myself_plots(subject, coins, log):
@@ -258,30 +297,15 @@ while True:
                 if best != hodl:
                     try:
                         result = f"{from_coin} -> {best.name}"
-                        #direct_buy = f"{hodl.name}/{best.name}" in tickers or f"{best.name}/{hodl.name}" in tickers
-                        if hodl.name == 'BTC':
-                            buy       = best.name
-                            good_rate = -best.gain_per_hour
-                        else:
-                            buy       = 'BTC'
-                            good_rate = hodl.gain_per_hour
-
-                        good_rate  = clamp(good_rate, -.03, .03)
-                        factor     = unmix(good_rate, -.03, .03)
-                        num_tries  = mix(factor, 3, 6)
-                        start      = mix(factor, -.003, -.03)
-                        end        = mix(factor, .015,   .003)
-
-                        try_factors = np.linspace(start, end, int(num_tries))
-                        buy_coin(hodl.name, buy, try_factors=try_factors)
-
-                        if buy != best.name:
+                        coin = best.name if hodl.name == 'BTC' else 'BTC'
+                        buy_coin(hodl.name, coin)
+                        if coin != best.name:
                             holding = get_holding_coin()
                             continue
 
                     except TimeoutError:
                         result += '...timed out'
-                        continue
+                        #continue uncomment eventually
 
                     except:
                         result += '...errored'
