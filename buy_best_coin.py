@@ -33,6 +33,8 @@ milli_seconds_in_minute = 1000*60
 clamp = lambda value,  frm, to: max(frm, min(to, value))
 mix   = lambda factor, frm, to: frm + (to - frm) * factor
 unmix = lambda value,  frm, to: (value - frm) / (to - frm)
+rnd = lambda value: round(value, 4)
+
 
 def get_coin_forecasts():
     print('Forecasting coin prices...')
@@ -50,11 +52,11 @@ def get_coin_forecasts():
         zero_time = times[-1]
         times = [time-zero_time for time in times]
 
-        fit_days  = [1, 3, 7]
+        fit_days  = [3, 7]
         fit_times  = [times [-days*24:] for days in fit_days]
         fit_prices = [prices[-days*24:] for days in fit_days]
         fits = [np.polyfit(t, p, 3) for t,p in zip(fit_times, fit_prices)]
-        predict_time = times[-1] + 2
+        predict_time = times[-1] + 1
         expected = np.average([np.polyval(fit, predict_time) for fit in fits])
 
         # Make expected price more realistic...
@@ -86,8 +88,8 @@ def get_best_coins(coins):
         ohlcv = binance.fetch_ohlcv(coin.symbol, f'5m', limit=24)
         prices = [np.average(candle[2:-1]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour - coin.zero_time for candle in ohlcv]
-        fit = np.polyfit(times, prices, 1) # TODO 1 or 2 here?
-        expected_st    = np.polyval(fit, times[-1]+2)
+        fit = np.polyfit(times, prices, 1)
+        expected_st    = np.polyval(fit, times[-1]+1)
         price_on_curve = np.polyval(fit, times[-1])
         coin.gain_st = (expected_st - price_on_curve) / price
         # Cap out when spikes occur.  Its probably too late to get the gains...
@@ -100,7 +102,6 @@ def get_best_coins(coins):
         coin.plots['fit st'] = (times, fit_prices, '-', None)
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
-    rnd = lambda value: round(value, 4)
     print('\n'.join(f"{coin.name}: {rnd(coin.gain)} lt={rnd(coin.gain_lt)} st={rnd(coin.gain_st)} dy/dx={rnd(coin.gain_per_hour)}"
                     for coin in coins[:4]))
     return coins
@@ -182,7 +183,7 @@ def buy_coin(from_coin, coin, max_change=.03, max_wait_minutes=60):
         good_rate = fit[0] * good_direction
         amplitude = (sum(abs(candle[3]-candle[2]) for candle in ohlcv) - abs(fit[0]*30)) / len(ohlcv)
         assert amplitude > 0, amplitude
-        print(f"good rate/hour {round(good_rate*60/current_price, 4)} amplitude {round(amplitude/current_price, 4)}")
+        print(f"good rate/hour {rnd(good_rate*60/current_price)} amplitude {rnd(amplitude/current_price)}")
 
         now = ticker['timestamp'] / milli_seconds_in_minute
         assert 0 <= now - times[-1] <= 5
@@ -202,7 +203,7 @@ def buy_coin(from_coin, coin, max_change=.03, max_wait_minutes=60):
             amount = holding_amount
 
         difference = (price - current_price) / current_price
-        print(f"{side} {amount} {symbol} at {price} ({round(difference, 4)})")
+        print(f"{side} {amount} {symbol} at {price} ({rnd(difference)})")
         order = binance.create_order(symbol, 'limit', side, amount, price)
         print(order['info'])
 
@@ -303,8 +304,9 @@ while True:
                             holding = get_holding_coin()
                             continue
 
-                    except TimeoutError:
+                    except TimeoutError as error:
                         result += '...timed out'
+                        print(error)
                         #continue uncomment eventually
 
                     except:
