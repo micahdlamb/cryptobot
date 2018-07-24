@@ -109,7 +109,7 @@ def get_best_coins(coins):
 
 def get_most_volatile_coins():
     print('Finding most spiky coins')
-    class Coin(collections.namedtuple("Coin", "name fit, amplitude")): pass
+    class Coin(collections.namedtuple("Coin", "name fit amplitude")): pass
     coins = []
     symbols = [symbol for symbol in tickers if symbol.endswith('/BTC')]
     for symbol in symbols:
@@ -118,7 +118,7 @@ def get_most_volatile_coins():
         times = [candle[0]/milli_seconds_in_minute for candle in ohlcv]
         fit = np.polyfit(times, prices, 1)
         amplitude = (sum(abs(candle[3]-candle[2]) for candle in ohlcv) - abs(fit[0]*30)) / len(ohlcv)
-        assert amplitude > -1e-6
+        assert amplitude > -1e-5
 
         name = symbol.split('/')[0]
         current_price = ohlcv[-1][-2]
@@ -126,7 +126,7 @@ def get_most_volatile_coins():
         coins.append(coin)
 
     coins.sort(key=lambda coin: coin.amplitude, reverse=True)
-    print('\n'.join(f"{coin.name}: amplitude={rnd(coin.amplitude*100)}% fit={rnd(coin.fit)}/m"
+    print('\n'.join(f"{coin.name}: amplitude={rnd(coin.amplitude*100)}% fit={rnd(coin.fit*60)}%/h"
                     for coin in coins[:4]))
     return coins
 
@@ -136,7 +136,11 @@ def to_btc(coin, amount):
         return amount
     if coin == 'USDT':
         return amount / tickers["BTC/USDT"]['last']
-    return amount * tickers[f"{coin}/BTC"]['last']
+    symbol = f"{coin}/BTC"
+    if symbol in tickers:
+        return amount * tickers[symbol]['last']
+    print(f'Ignoring unknown coin in balance: {coin}')
+    return 0
 
 
 def to_usdt(coin, amount):
@@ -211,7 +215,10 @@ def buy_coin(from_coin, coin, max_change=.03, max_wait_minutes=60):
         print(f"good rate/hour {rnd(good_rate*60/current_price)} amplitude {rnd(amplitude/current_price)}")
 
         now = ticker['timestamp'] / milli_seconds_in_minute
-        assert 0 <= now - times[-1] <= 5
+        time_since_fit = now - times[-1]
+        if not (0 <= time_since_fit <= 5):
+            assert 0 <= time_since_fit <= 15, time_since_fit
+            print(f"Warning: ticker time is {now - times[-1]} after ohlcv time")
 
         if good_rate > 0:
             price = np.polyval(fit, now + 15) + good_direction * amplitude / 2
@@ -233,7 +240,7 @@ def buy_coin(from_coin, coin, max_change=.03, max_wait_minutes=60):
             order = binance.create_order(symbol, 'limit', side, amount, price)
         except Exception as error:
             # TODO not sure why this happens sometimes...
-            print(error)
+            time.sleep(5*60)
             continue
         print(order['info'])
 
