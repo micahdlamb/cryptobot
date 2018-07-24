@@ -42,7 +42,7 @@ def get_coin_forecasts():
     coins = []
     symbols = ['BTC/USDT'] + [symbol for symbol in tickers if symbol.endswith('/BTC')]
     for symbol in symbols:
-        ohlcv = binance.fetch_ohlcv(symbol, f'1h', limit=7*24)
+        ohlcv = binance.fetch_ohlcv(symbol, '1h', limit=7*24)
         if len(ohlcv) < 7*24/2:
             print(f"Skipping {symbol} for missing data. len(ohlcv)={len(ohlcv)}")
             continue
@@ -85,7 +85,7 @@ def get_best_coins(coins):
         price = tickers[coin.symbol]['last']
         coin.gain_lt = (coin.expected_lt - price) / price
 
-        ohlcv = binance.fetch_ohlcv(coin.symbol, f'5m', limit=24)
+        ohlcv = binance.fetch_ohlcv(coin.symbol, '5m', limit=24)
         prices = [np.average(candle[2:-1]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour - coin.zero_time for candle in ohlcv]
         fit = np.polyfit(times, prices, 1)
@@ -103,6 +103,30 @@ def get_best_coins(coins):
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
     print('\n'.join(f"{coin.name}: {rnd(coin.gain)} lt={rnd(coin.gain_lt)} st={rnd(coin.gain_st)} dy/dx={rnd(coin.gain_per_hour)}"
+                    for coin in coins[:4]))
+    return coins
+
+
+def get_most_volatile_coins():
+    print('Finding most spiky coins')
+    class Coin(collections.namedtuple("Coin", "name fit, amplitude")): pass
+    coins = []
+    symbols = [symbol for symbol in tickers if symbol.endswith('/BTC')]
+    for symbol in symbols:
+        ohlcv = binance.fetch_ohlcv(symbol, '5m', limit=6)
+        prices = [np.average(candle[2:-1]) for candle in ohlcv]
+        times = [candle[0]/milli_seconds_in_minute for candle in ohlcv]
+        fit = np.polyfit(times, prices, 1)
+        amplitude = (sum(abs(candle[3]-candle[2]) for candle in ohlcv) - abs(fit[0]*30)) / len(ohlcv)
+        assert amplitude > -1e-6
+
+        name = symbol.split('/')[0]
+        current_price = ohlcv[-1][-2]
+        coin = Coin(name, fit[0]/current_price, amplitude/current_price)
+        coins.append(coin)
+
+    coins.sort(key=lambda coin: coin.amplitude, reverse=True)
+    print('\n'.join(f"{coin.name}: amplitude={rnd(coin.amplitude*100)}% fit={rnd(coin.fit)}/m"
                     for coin in coins[:4]))
     return coins
 
@@ -161,12 +185,13 @@ def buy_coin(from_coin, coin, max_change=.03, max_wait_minutes=60):
             raise TimeoutError(f"{side} of {symbol} didn't get filled")
 
         # Ride any spikes
-        ohlcv = binance.fetch_ohlcv(symbol, f'1m', limit=5)
+        ohlcv = binance.fetch_ohlcv(symbol, '1m', limit=5)
         prices = [np.average(candle[2:-1]) for candle in ohlcv]
         times = [candle[0]/milli_seconds_in_minute for candle in ohlcv]
         fit = np.polyfit(times, prices, 1)
         good_rate = fit[0] * good_direction
         if good_rate > 0:
+            print('Wait while price moves in good direction...')
             time.sleep(5*60)
             continue
 
@@ -176,7 +201,7 @@ def buy_coin(from_coin, coin, max_change=.03, max_wait_minutes=60):
         if good_change < -max_change:
             raise TimeoutError(f"{side} of {symbol} aborted due to price change of {rnd(abs(good_change))}")
 
-        ohlcv = binance.fetch_ohlcv(symbol, f'5m', limit=6)
+        ohlcv = binance.fetch_ohlcv(symbol, '5m', limit=6)
         prices = [np.average(candle[2:-1]) for candle in ohlcv]
         times = [candle[0]/milli_seconds_in_minute for candle in ohlcv]
         fit = np.polyfit(times, prices, 1)
@@ -204,7 +229,12 @@ def buy_coin(from_coin, coin, max_change=.03, max_wait_minutes=60):
 
         difference = (price - current_price) / current_price
         print(f"{side} {amount} {symbol} at {price} ({rnd(difference)})")
-        order = binance.create_order(symbol, 'limit', side, amount, price)
+        try:
+            order = binance.create_order(symbol, 'limit', side, amount, price)
+        except Exception as error:
+            # TODO not sure why this happens sometimes...
+            print(error)
+            continue
         print(order['info'])
 
         id = order['id']
@@ -285,45 +315,69 @@ while True:
     try:
         with io.StringIO() as log, contextlib.redirect_stdout(Tee(log, sys.stdout)):
             tickers = binance.fetch_tickers()
-            holding = get_holding_coin()
-            from_coin = holding.coin
-            result = None
-            coins = get_coin_forecasts()
-            for i in range(16):
-                tickers = binance.fetch_tickers()
-                coins = get_best_coins(coins)
-                best  = coins[0]
-                hodl  = next(c for c in coins if c.name == holding.coin)
+            market_trend = np.average([v['percentage'] for k, v in tickers.items() if k.endswith('/BTC')])
+            if market_trend > 0:
+                holding = get_holding_coin()
+                from_coin = holding.coin
+                result = None
+                coins = get_coin_forecasts()
+                for i in range(16):
+                    tickers = binance.fetch_tickers()
+                    coins = get_best_coins(coins)
+                    best  = coins[0]
+                    hodl  = next(c for c in coins if c.name == holding.coin)
 
-                if best != hodl:
+                    if best != hodl:
+                        try:
+                            result = f"{from_coin} -> {best.name}"
+                            coin = best.name if hodl.name == 'BTC' else 'BTC'
+                            buy_coin(hodl.name, coin)
+                            if coin != best.name:
+                                holding = get_holding_coin()
+                                continue
+
+                        except TimeoutError as error:
+                            result += '...timed out'
+                            print(error)
+                            #continue uncomment eventually
+
+                        except:
+                            result += '...errored'
+                            import traceback
+                            print(traceback.format_exc()) # print_exc goes to stderr not stdout
+
+                        break
+
+                    time.sleep(15*60)
+
+                result = result or f'HODL {hodl.name}'
+                print(result)
+
+                # Show relevant plots
+                plot_coins = [coin for coin in coins if coin.name in [from_coin, 'BTC', best.name]]
+                email_myself_plots(result, plot_coins, log.getvalue())
+
+            else:
+                symbols = [symbol for symbol in tickers if symbol.endswith('/BTC')]
+                coins = get_most_volatile_coins()
+                spiky = coins[0].name
+                print(f"Buy/sell {spiky}")
+                starting_balance = get_balance()
+                for i in range(4):
+                    holding = get_holding_coin().coin
                     try:
-                        result = f"{from_coin} -> {best.name}"
-                        coin = best.name if hodl.name == 'BTC' else 'BTC'
-                        buy_coin(hodl.name, coin)
-                        if coin != best.name:
-                            holding = get_holding_coin()
-                            continue
-
+                        buy_coin(holding, spiky if holding == 'BTC' else 'BTC', max_wait_minutes=30)
                     except TimeoutError as error:
-                        result += '...timed out'
-                        print(error)
-                        #continue uncomment eventually
+                        print(f"Timeout: {error}")
 
-                    except:
-                        result += '...errored'
-                        import traceback
-                        print(traceback.format_exc()) # print_exc goes to stderr not stdout
-
-                    break
-
-                time.sleep(15*60)
-
-            result = result or f'HODL {hodl.name}'
-            print(result)
-
-            # Show relevant plots
-            plot_coins = [coin for coin in coins if coin.name in [from_coin, 'BTC', best.name]]
-            email_myself_plots(result, plot_coins, log.getvalue())
+                ending_balance = get_balance()
+                gain = (ending_balance.btc - starting_balance.btc) / starting_balance.btc
+                result = f"Buy/sell {spiky} ₿{rnd(gain*100)}%"
+                print(result)
+                msg = EmailMessage()
+                msg['Subject'] = result
+                msg.set_content(log.getvalue())
+                email_myself(msg)
 
     except:
         import traceback
