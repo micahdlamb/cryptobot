@@ -52,10 +52,10 @@ def get_coin_forecasts():
         zero_time = times[-1]
         times = [time-zero_time for time in times]
 
-        fit_days  = [3, 7]
+        fit_days  = [1, 3, 7]
         fit_times  = [times [-days*24:] for days in fit_days]
         fit_prices = [prices[-days*24:] for days in fit_days]
-        fits = [np.polyfit(t, p, 3) for t,p in zip(fit_times, fit_prices)]
+        fits = [np.polyfit(t, p, 0) for t,p in zip(fit_times, fit_prices)]
         predict_time = times[-1] + 1
         expected = np.average([np.polyval(fit, predict_time) for fit in fits])
 
@@ -174,7 +174,7 @@ def buy_coin(from_coin, coin, max_change=.03, max_wait_minutes=60):
         current_price = ticker['last']
         good_change   = good_direction * (current_price - start_price) / start_price
         if good_change < -max_change:
-            raise TimeoutError(f"{side} of {symbol} aborted due to price change of {abs(good_change)}")
+            raise TimeoutError(f"{side} of {symbol} aborted due to price change of {rnd(abs(good_change))}")
 
         ohlcv = binance.fetch_ohlcv(symbol, f'5m', limit=6)
         prices = [np.average(candle[2:-1]) for candle in ohlcv]
@@ -189,9 +189,9 @@ def buy_coin(from_coin, coin, max_change=.03, max_wait_minutes=60):
         assert 0 <= now - times[-1] <= 5
 
         if good_rate > 0:
-            price = np.polyval(fit, now + 10) + good_direction * amplitude / 2
+            price = np.polyval(fit, now + 15) + good_direction * amplitude / 2
         else:
-            price = np.polyval(fit, now) + good_direction * amplitude / 2
+            price = np.polyval(fit, now + 5) + good_direction * amplitude / 2
 
         # .999 for .1 % binance fee - not sure if needed?
         holding_amount = binance.fetch_balance()[from_coin]['free'] * .999
