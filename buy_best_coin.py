@@ -109,7 +109,7 @@ def get_best_coins(coins):
 
 def get_most_volatile_coins():
     print('Finding most spiky coins')
-    class Coin(collections.namedtuple("Coin", "name fit amplitude")): pass
+    class Coin(collections.namedtuple("Coin", "name goodness fit amplitude")): pass
     coins = []
     symbols = [symbol for symbol in tickers if symbol.endswith('/BTC')]
     for symbol in symbols:
@@ -119,13 +119,14 @@ def get_most_volatile_coins():
         fit = np.polyfit(times, prices, 1)
         amplitude = (sum(abs(candle[3]-candle[2]) for candle in ohlcv) - abs(fit[0]*30)) / len(ohlcv)
         assert amplitude > -1e-5
+        goodness = min(fit[0]*15, .01) + amplitude
 
         name = symbol.split('/')[0]
         current_price = ohlcv[-1][-2]
-        coin = Coin(name, fit[0]/current_price, amplitude/current_price)
+        coin = Coin(name, goodness, fit[0]/current_price, amplitude/current_price)
         coins.append(coin)
 
-    coins.sort(key=lambda coin: coin.amplitude, reverse=True)
+    coins.sort(key=lambda coin: coin.goodness, reverse=True)
     print('\n'.join(f"{coin.name}: amplitude={rnd(coin.amplitude*100)}% fit={rnd(coin.fit*60)}%/h"
                     for coin in coins[:4]))
     return coins
@@ -149,8 +150,9 @@ def to_usdt(coin, amount):
 
 def get_balance():
     balance = binance.fetch_balance()
-    btc  = sum(to_btc (coin, amount) for coin, amount in balance['total'].items() if amount)
-    usdt = sum(to_usdt(coin, amount) for coin, amount in balance['total'].items() if amount)
+    totals = [(coin, amount) for coin, amount in balance['total'].items() if amount]
+    btc  = sum(to_btc (coin, amount) for coin, amount in totals)
+    usdt = sum(to_usdt(coin, amount) for coin, amount in totals)
     return collections.namedtuple("Balance", "btc usdt")(btc, usdt)
 
 
@@ -159,8 +161,9 @@ def get_holding_coin():
     for coin, amount in balance['used'].items():
         if amount:
             print(f"WARNING {amount} {coin} is used")
-    balance = [(coin, amount) for coin, amount in balance['free'].items() if amount]
-    balance = [(coin, amount, to_usdt(coin, amount), to_btc(coin, amount)) for coin, amount in balance]
+    tradeable = lambda coin: coin == 'BTC' or f"{coin}/BTC" in tickers
+    free    = [(coin, amount) for coin, amount in balance['free'].items() if amount and tradeable(coin)]
+    balance = [(coin, amount, to_usdt(coin, amount), to_btc(coin, amount)) for coin, amount in free]
     hodl = max(balance, key=lambda item: item[2])
     return collections.namedtuple("Holding", "coin amount amount_usdt amount_btc")(*hodl)
 
@@ -212,7 +215,7 @@ def buy_coin(from_coin, coin, max_change=.03, max_wait_minutes=60):
         good_rate = fit[0] * good_direction
         amplitude = (sum(abs(candle[3]-candle[2]) for candle in ohlcv) - abs(fit[0]*30)) / len(ohlcv)
         assert amplitude > 0, amplitude
-        print(f"good rate/hour {rnd(good_rate*60/current_price)} amplitude {rnd(amplitude/current_price)}")
+        print(f"good rate/hour {rnd(good_rate*60*100/current_price)}% amplitude {rnd(amplitude*100/current_price)}%")
 
         now = ticker['timestamp'] / milli_seconds_in_minute
         time_since_fit = now - times[-1]
@@ -235,7 +238,7 @@ def buy_coin(from_coin, coin, max_change=.03, max_wait_minutes=60):
             amount = holding_amount
 
         difference = (price - current_price) / current_price
-        print(f"{side} {amount} {symbol} at {price} ({rnd(difference)})")
+        print(f"{side} {amount} {symbol} at {price} ({rnd(difference*100)}%)")
         try:
             order = binance.create_order(symbol, 'limit', side, amount, price)
         except Exception as error:
@@ -323,6 +326,7 @@ while True:
         with io.StringIO() as log, contextlib.redirect_stdout(Tee(log, sys.stdout)):
             tickers = binance.fetch_tickers()
             market_trend = np.average([v['percentage'] for k, v in tickers.items() if k.endswith('/BTC')])
+            print(f"Alt coin trend: {market_trend}%")
             if market_trend > 0:
                 holding = get_holding_coin()
                 from_coin = holding.coin
@@ -365,6 +369,34 @@ while True:
                 email_myself_plots(result, plot_coins, log.getvalue())
 
             else:
+                starting_balance = get_balance()
+                for i in range(4):
+                    holding = get_holding_coin().coin
+
+                    ohlcv = binance.fetch_ohlcv('TUSD/BTC', '5m', limit=12)
+                    prices = [np.average(candle[2:-1]) for candle in ohlcv]
+                    times = [candle[0] for candle in ohlcv]
+                    fit = np.polyfit(times, prices, 1)
+
+                    best = 'TUSD' if fit[0] > 0 else 'BTC'
+                    if best != holding:
+                        try:
+                            buy_coin(holding, 'BTC' if holding != 'BTC' else best)
+                        except TimeoutError as error:
+                            print(f"Timeout: {error}")
+                    else:
+                        time.sleep(15*60)
+
+                ending_balance = get_balance()
+                gain = (ending_balance.btc - starting_balance.btc) / starting_balance.btc
+                result = f"Buy/sell TUSD ₿{rnd(gain*100)}%"
+                print(result)
+                msg = EmailMessage()
+                msg['Subject'] = result
+                msg.set_content(log.getvalue())
+                email_myself(msg)
+
+                """
                 symbols = [symbol for symbol in tickers if symbol.endswith('/BTC')]
                 coins = get_most_volatile_coins()
                 spiky = coins[0].name
@@ -385,6 +417,7 @@ while True:
                 msg['Subject'] = result
                 msg.set_content(log.getvalue())
                 email_myself(msg)
+                """
 
     except:
         import traceback
