@@ -57,11 +57,11 @@ def get_coin_forecasts():
         zero_time = times[-1]
         times = [time-zero_time for time in times]
 
-        fit_days  = [3, 7]
+        fit_days  = [1, 3, 7]
         fit_times  = [times [-days*24:] for days in fit_days]
         fit_prices = [prices[-days*24:] for days in fit_days]
-        fits = [np.polyfit(t, p, 3) for t,p in zip(fit_times, fit_prices)]
-        predict_time = times[-1] + 0
+        fits = [np.polyfit(t, p, 1) for t,p in zip(fit_times, fit_prices)]
+        predict_time = times[-1] + 1
         expected = np.average([np.polyval(fit, predict_time) for fit in fits])
 
         # Make expected price more realistic...
@@ -95,7 +95,7 @@ def get_best_coins(coins):
         prices = [np.average(candle[2:-1]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour - coin.zero_time for candle in ohlcv]
         fit = np.polyfit(times, prices, 1)
-        expected_st    = np.polyval(fit, times[-1]+2)
+        expected_st    = np.polyval(fit, times[-1]+4)
         price_on_curve = np.polyval(fit, times[-1])
         coin.gain_st = (expected_st - price_on_curve) / price
         #coin.gain_st = clamp(coin.gain_st, -.06, .03)
@@ -270,7 +270,7 @@ def email_myself_plots(subject, coins, log):
     balance = f"₿{round(balance.btc, 5)} ${round(balance.usdt)}"
 
     msg['Subject'] = subject+balance
-    trades = '<br>'.join(f"{t['side']} {t['symbol']} at {round(t['price'], 5)}" for t in reversed(trade_log))
+    trades = '<br>'.join(f"{t['side']} {t['symbol']} at {t['price']}" for t in reversed(trade_log))
     msg.set_content(trades)
 
     imgs = ""
@@ -391,7 +391,7 @@ if __name__ == "__main__":
                     print(result)
                     msg = EmailMessage()
                     msg['Subject'] = result
-                    trades = '\n'.join(f"{t['side']} {t['symbol']} at {round(t['price'], 5)}" for t in reversed(trade_log))
+                    trades = '\n'.join(f"{t['side']} {t['symbol']} at {t['price']}" for t in reversed(trade_log))
                     msg.set_content(trades+'\n'+log.getvalue())
                     email_myself(msg)
 
@@ -413,7 +413,7 @@ if __name__ == "__main__":
                     print(result)
                     msg = EmailMessage()
                     msg['Subject'] = result
-                    trades = '\n'.join(f"{t['side']} {t['symbol']} at {round(t['price'], 5)}" for t in reversed(trade_log))
+                    trades = '\n'.join(f"{t['side']} {t['symbol']} at {t['price']}" for t in reversed(trade_log))
                     msg.set_content(trades+'\n'+log.getvalue())
                     email_myself(msg)
                     """
