@@ -222,6 +222,7 @@ def trade_coin(from_coin, to_coin, max_change=.03, max_wait_minutes=60):
         fit = np.polyfit(times, prices, 1)
         good_rate = fit[0] * good_direction
         amplitude = (sum(abs(candle[3]-candle[2]) for candle in ohlcv) - abs(fit[0]*15*4)) / len(ohlcv)
+        good_rate = clamp(good_rate, -.03, .03)
         assert amplitude > 0, amplitude
         print(f"good rate {percentage(good_rate*60/current_price)}/h amplitude {percentage(amplitude/current_price)}")
 
@@ -232,7 +233,7 @@ def trade_coin(from_coin, to_coin, max_change=.03, max_wait_minutes=60):
             print(f"Warning: ticker time is {now - times[-1]} minutes after ohlcv time")
 
         if good_rate > 0:
-            price = np.polyval(fit, now + 30) + good_direction * amplitude / 2
+            price = np.polyval(fit, now + 25) + good_direction * amplitude / 2
         else:
             price = np.polyval(fit, now + 5) + good_direction * amplitude / 2
 
@@ -295,7 +296,7 @@ def email_myself_plots(subject, coins, log):
 
         for trade in trade_log:
             if trade['symbol'] == coin.symbol.replace('/', ''):
-                x = trade['transactTime'] / milli_seconds_in_hour - coin.zero_time
+                x = trade['time'] / milli_seconds_in_hour - coin.zero_time
                 y = trade['price']
                 plt.text(x, y, trade['side'][0].lower())
 
@@ -347,7 +348,7 @@ if __name__ == "__main__":
                     from_coin = holding.name
                     result = None
                     coins = get_coin_forecasts()
-                    for i in range(16):
+                    for i in range(12):
                         coins = get_best_coins(coins)
                         best  = coins[0]
                         hodl  = next(c for c in coins if c.name == holding.name)
@@ -373,7 +374,7 @@ if __name__ == "__main__":
 
                             break
 
-                        time.sleep(15*60)
+                        time.sleep(20*60)
 
                     result = result or f'HODL {hodl.name}'
                     print(result)
@@ -381,6 +382,7 @@ if __name__ == "__main__":
                     # Show relevant plots
                     plot_coins = [coin for coin in coins if coin.name in [from_coin, 'BTC', best.name]]
                     email_myself_plots(result, plot_coins, log.getvalue())
+                    time.sleep(60*60)
 
                 else:
                     """
