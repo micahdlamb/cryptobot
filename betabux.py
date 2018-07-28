@@ -270,6 +270,7 @@ def trade_coin(from_coin, to_coin, max_change=.03, max_wait_minutes=60):
 
         if order['status'] == 'closed':
             trade_log.append(order['info'])
+            print(order)
             print('')
             return order
 
@@ -297,7 +298,7 @@ def email_myself_plots(subject, coins, log):
         for trade in trade_log:
             if trade['symbol'] == coin.symbol.replace('/', ''):
                 x = trade['time'] / milli_seconds_in_hour - coin.zero_time
-                y = trade['price']
+                y = float(trade['price'])
                 plt.text(x, y, trade['side'][0].lower())
 
         plt.legend()
