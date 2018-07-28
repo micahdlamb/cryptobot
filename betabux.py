@@ -257,7 +257,7 @@ def trade_coin(from_coin, to_coin, max_change=.03, max_wait_minutes=60):
         print(order['info'])
 
         id = order['id']
-        for i in range(3):
+        for i in range(6):
             time.sleep(5*60)
             order = binance.fetch_order(id, symbol=symbol)
             print(f"{order['filled']} / {order['amount']} filled")
