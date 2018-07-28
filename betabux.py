@@ -53,11 +53,8 @@ def get_coin_forecasts():
             continue
         prices = [np.average(candle[2:-1]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
-        # Make time in past negative
-        zero_time = times[-1]
-        times = [time-zero_time for time in times]
 
-        fit_days  = [1, 3, 7]
+        fit_days  = [1, 3]
         fit_times  = [times [-days*24:] for days in fit_days]
         fit_prices = [prices[-days*24:] for days in fit_days]
         fits = [np.polyfit(t, p, 1) for t,p in zip(fit_times, fit_prices)]
@@ -74,7 +71,7 @@ def get_coin_forecasts():
         coins.append(coin)
 
         plot_times, plot_prices = times[-16:], prices[-16:]
-        coin.zero_time = zero_time
+        coin.zero_time = times[-1]
         coin.plots = {"actual": (plot_times, plot_prices, dict(linestyle='-', marker='o'))}
         for days, fit in zip(fit_days, fits):
             times = plot_times[-days*24:]
@@ -91,18 +88,18 @@ def get_best_coins(coins):
         price = tickers[coin.symbol]['last']
         coin.gain_lt = (coin.expected_lt - price) / price
 
-        ohlcv = binance.fetch_ohlcv(coin.symbol, '5m', limit=24)
+        ohlcv = binance.fetch_ohlcv(coin.symbol, '5m', limit=36)
         prices = [np.average(candle[2:-1]) for candle in ohlcv]
-        times  = [candle[0] / milli_seconds_in_hour - coin.zero_time for candle in ohlcv]
+        times  = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
         fit = np.polyfit(times, prices, 1)
         expected_st    = np.polyval(fit, times[-1]+4)
         price_on_curve = np.polyval(fit, times[-1])
         coin.gain_st = (expected_st - price_on_curve) / price
-        #coin.gain_st = clamp(coin.gain_st, -.06, .03)
+        coin.gain_st = clamp(coin.gain_st, -.04, .04)
 
         coin.gain = (coin.gain_lt + coin.gain_st) / 2
         coin.gain_per_hour = np.polyfit(times[-6:], prices[-6:], 1)[0] / price
-        coin.plots['actual st'] = (times, prices, '-', None)
+        coin.plots['actual st'] = (times, prices, dict(linestyle='-'))
         fit_prices = [np.polyval(fit, time) for time in times]
         coin.plots['fit st'] = (times, fit_prices, dict(linestyle='-'))
 
@@ -280,6 +277,7 @@ def email_myself_plots(subject, coins, log):
         plt.xlabel("hours")
         plt.xticks(range(-100 * 4, 10 * 4, 4))
         for name, (x, y, kwds) in coin.plots.items():
+            x = [t-coin.zero_time for t in x]
             plt.plot(x, y, label=name, **kwds)
 
         plt.legend()
@@ -325,7 +323,7 @@ if __name__ == "__main__":
                 tickers = binance.fetch_tickers()
                 market_trend = np.average([v['percentage'] for k, v in tickers.items() if k.endswith('/BTC')])
                 print(f"Alt coin trend: {market_trend}%")
-                if market_trend > 0:
+                if True or market_trend > 0:
                     holding = get_holding_coin()
                     from_coin = holding.coin
                     result = None
@@ -367,6 +365,7 @@ if __name__ == "__main__":
                     email_myself_plots(result, plot_coins, log.getvalue())
 
                 else:
+                    """
                     starting_balance = get_balance()
                     for i in range(4):
                         holding = get_holding_coin().coin
@@ -394,6 +393,7 @@ if __name__ == "__main__":
                     trades = '\n'.join(f"{t['side']} {t['symbol']} at {t['price']}" for t in reversed(trade_log))
                     msg.set_content(trades+'\n'+log.getvalue())
                     email_myself(msg)
+                    """
 
                     """
                     coins = get_most_volatile_coins()
@@ -433,3 +433,6 @@ if __name__ == "__main__":
             time.sleep(3600*(1 - loop_hours))
 
         print('-'*30 + '\n')
+
+else:
+    tickers = binance.fetch_tickers()
