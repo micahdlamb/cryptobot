@@ -56,7 +56,7 @@ def get_coin_forecasts():
         prices = [np.average(candle[2:-1]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
 
-        fit_days  = [1]
+        fit_days  = [1, 3]
         fit_times  = [times [-days*24:] for days in fit_days]
         fit_prices = [prices[-days*24:] for days in fit_days]
         fits = [np.polyfit(t, p, 1) for t,p in zip(fit_times, fit_prices)]
@@ -95,10 +95,10 @@ def get_best_coins(coins):
         prices = [np.average(candle[2:-1]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
         fit = np.polyfit(times, prices, 1)
-        expected_st    = np.polyval(fit, times[-1]+3)
+        expected_st    = np.polyval(fit, times[-1]+4)
         price_on_curve = np.polyval(fit, times[-1])
         coin.gain_st = (expected_st - price_on_curve) / price
-        coin.gain_st = clamp(coin.gain_st, -.015, .015)
+        coin.gain_st = clamp(coin.gain_st, -.03, .03)
 
         coin.gain = (coin.gain_lt + coin.gain_st) / 2
         coin.gain_per_hour = np.polyfit(times[-6:], prices[-6:], 1)[0] / price
