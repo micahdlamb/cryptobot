@@ -9,9 +9,11 @@ Look into how altcoin and BTC change relative to each other
 Show latest tickers in plot.  Show times of buys and sells.
 Always have a sell order going for alt coins
 Investigate multiple limit orders at once
+
+np.fft.fft to get frequency and amplitude
 """
 
-import os, sys, time, collections, io, contextlib, math
+import os, sys, time, collections, io, contextlib, traceback
 import smtplib
 from email.message import EmailMessage
 from email.utils import make_msgid
@@ -91,20 +93,19 @@ def get_best_coins(coins):
         price = tickers[coin.symbol]['last']
         coin.gain_lt = (coin.expected_lt - price) / price
 
-        ohlcv = binance.fetch_ohlcv(coin.symbol, '5m', limit=36)
+        ohlcv = binance.fetch_ohlcv(coin.symbol, '5m', limit=48)
         prices = [np.average(candle[2:-1]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
         fit = np.polyfit(times, prices, 1)
-        expected_st    = np.polyval(fit, times[-1]+4)
+        expected_st    = np.polyval(fit, times[-1]+6)
         price_on_curve = np.polyval(fit, times[-1])
         coin.gain_st = (expected_st - price_on_curve) / price
-        coin.gain_st = clamp(coin.gain_st, -.03, .03)
+        coin.gain_st = clamp(coin.gain_st, -.04, .04)
 
         coin.gain = (coin.gain_lt + coin.gain_st) / 2
         coin.gain_per_hour = np.polyfit(times[-6:], prices[-6:], 1)[0] / price
-        coin.plots['actual st'] = (times, prices, dict(linestyle='-'))
-        fit_prices = [np.polyval(fit, time) for time in times]
-        coin.plots['fit st'] = (times, fit_prices, dict(linestyle='-'))
+        coin.plots['st actual'] = times, prices, dict(linestyle='-')
+        coin.plots['st fit']    = times, [np.polyval(fit, t) for t in times], dict(linestyle='--')
 
         if tickers[coin.symbol]['quoteVolume'] < 100:
             coin.gain = 0
@@ -178,7 +179,7 @@ def get_holding_coin():
 
 trade_log = []
 
-def trade_coin(from_coin, to_coin, max_change=.03, max_wait_minutes=60):
+def trade_coin(from_coin, to_coin, plots=None, max_change=.03, max_wait_minutes=60):
     assert from_coin != to_coin, to_coin
     print(f"Transferring {from_coin} to {to_coin}...")
 
@@ -222,9 +223,12 @@ def trade_coin(from_coin, to_coin, max_change=.03, max_wait_minutes=60):
         fit = np.polyfit(times, prices, 1)
         good_rate = fit[0] * good_direction
         amplitude = (sum(abs(candle[3]-candle[2]) for candle in ohlcv) - abs(fit[0]*15*4)) / len(ohlcv)
-        good_rate = clamp(good_rate, -.03, .03)
         assert amplitude > 0, amplitude
         print(f"good rate {percentage(good_rate*60/current_price)}/h amplitude {percentage(amplitude/current_price)}")
+
+        if plots:
+            plots['buy actual'] = times, prices, dict(linestyle='-')
+            plots['buy fit']    = (times, [np.polyval(fit, t) for t in times], dict(linestyle='--'))
 
         now = ticker['timestamp'] / milli_seconds_in_minute
         time_since_fit = now - times[-1]
@@ -233,9 +237,9 @@ def trade_coin(from_coin, to_coin, max_change=.03, max_wait_minutes=60):
             print(f"Warning: ticker time is {now - times[-1]} minutes after ohlcv time")
 
         if good_rate > 0:
-            price = np.polyval(fit, now + 25) + good_direction * amplitude / 2
+            price = np.polyval(fit, now + 20) + good_direction * amplitude / 2
         else:
-            price = np.polyval(fit, now + 5) + good_direction * amplitude / 2
+            price = np.polyval(fit, now + 10) + good_direction * amplitude / 2
 
         # .999 for .1 % binance fee - not sure if needed?
         holding_amount = binance.fetch_balance()[from_coin]['free'] * .999
@@ -253,9 +257,12 @@ def trade_coin(from_coin, to_coin, max_change=.03, max_wait_minutes=60):
             order = binance.create_order(symbol, 'limit', side, amount, price)
         except Exception as error:
             # TODO not sure why this happens sometimes...
+            print(traceback.format_exc())
             time.sleep(5*60)
             continue
-        print(order['info'])
+
+        del order['info']
+        print(order)
 
         id = order['id']
         for i in range(6):
@@ -269,8 +276,7 @@ def trade_coin(from_coin, to_coin, max_change=.03, max_wait_minutes=60):
             binance.cancel_order(id, symbol=symbol)
 
         if order['status'] == 'closed':
-            trade_log.append(order['info'])
-            print(order)
+            trade_log.append(order)
             print('')
             return order
 
@@ -296,10 +302,10 @@ def email_myself_plots(subject, coins, log):
             plt.plot(x, y, label=name, **kwds)
 
         for trade in trade_log:
-            if trade['symbol'] == coin.symbol.replace('/', ''):
+            if trade['symbol'] == coin.symbol:
                 x = trade['time'] / milli_seconds_in_hour - coin.zero_time
-                y = float(trade['price'])
-                plt.text(x, y, trade['side'][0].lower())
+                y = trade['price']
+                plt.text(x, y, trade['side'][0])
 
         plt.legend()
         buf = io.BytesIO()
@@ -349,6 +355,7 @@ if __name__ == "__main__":
                     from_coin = holding.name
                     result = None
                     coins = get_coin_forecasts()
+                    sleep = 0
                     for i in range(12):
                         coins = get_best_coins(coins)
                         best  = coins[0]
@@ -357,11 +364,14 @@ if __name__ == "__main__":
                         if best != hodl:
                             try:
                                 result = f"{from_coin} -> {best.name}"
-                                coin = best.name if hodl.name == 'BTC' else 'BTC'
-                                trade_coin(hodl.name, coin)
+                                coin  = best.name  if hodl.name == 'BTC' else 'BTC'
+                                plots = best.plots if hodl.name == 'BTC' else hodl.plots
+                                trade_coin(hodl.name, coin, plots=plots)
                                 if coin != best.name:
                                     holding = get_holding_coin()
                                     continue
+
+                                sleep = 60*60*2
 
                             except TimeoutError as error:
                                 result += '...timed out'
@@ -370,7 +380,6 @@ if __name__ == "__main__":
 
                             except:
                                 result += '...errored'
-                                import traceback
                                 print(traceback.format_exc()) # print_exc goes to stderr not stdout
 
                             break
@@ -383,7 +392,7 @@ if __name__ == "__main__":
                     # Show relevant plots
                     plot_coins = [coin for coin in coins if coin.name in [from_coin, 'BTC', best.name]]
                     email_myself_plots(result, plot_coins, log.getvalue())
-                    time.sleep(60*60)
+                    time.sleep(sleep)
 
                 else:
                     """
