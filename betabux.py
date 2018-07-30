@@ -304,7 +304,7 @@ def email_myself_plots(subject, coins, log):
 
         for trade in trade_log:
             if trade['symbol'] == coin.symbol:
-                x = trade['time'] / milli_seconds_in_hour - coin.zero_time
+                x = trade['timestamp'] / milli_seconds_in_hour - coin.zero_time
                 y = trade['price']
                 plt.text(x, y, trade['side'][0])
 
