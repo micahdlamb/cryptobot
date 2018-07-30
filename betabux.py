@@ -372,7 +372,7 @@ if __name__ == "__main__":
                                     holding = get_holding_coin()
                                     continue
 
-                                sleep = 60*60*2
+                                sleep = 60*60*1
 
                             except TimeoutError as error:
                                 result += '...timed out'
