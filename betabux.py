@@ -179,7 +179,7 @@ def get_holding_coin():
 
 trade_log = []
 
-def trade_coin(from_coin, to_coin, plots=None, max_change=.03, max_wait_minutes=60):
+def trade_coin(from_coin, to_coin, plots=None, max_change=.03, max_wait_minutes=90):
     assert from_coin != to_coin, to_coin
     print(f"Transferring {from_coin} to {to_coin}...")
 
@@ -227,8 +227,9 @@ def trade_coin(from_coin, to_coin, plots=None, max_change=.03, max_wait_minutes=
         print(f"good rate {percentage(good_rate*60/current_price)}/h amplitude {percentage(amplitude/current_price)}")
 
         if plots:
-            plots['buy actual'] = times, prices, dict(linestyle='-')
-            plots['buy fit']    = (times, [np.polyval(fit, t) for t in times], dict(linestyle='--'))
+            times_in_hours = [t/60 for t in times]
+            plots['buy actual'] = times_in_hours, prices, dict(linestyle='-')
+            plots['buy fit']    = times_in_hours, [np.polyval(fit, t) for t in times], dict(linestyle='--')
 
         now = ticker['timestamp'] / milli_seconds_in_minute
         time_since_fit = now - times[-1]
