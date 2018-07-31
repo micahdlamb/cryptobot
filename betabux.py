@@ -61,7 +61,7 @@ def get_coin_forecasts():
         fit_days  = [1, 3]
         fit_times  = [times [-days*24:] for days in fit_days]
         fit_prices = [prices[-days*24:] for days in fit_days]
-        fits = [np.polyfit(t, p, 1) for t,p in zip(fit_times, fit_prices)]
+        fits = [np.polyfit(t, p, 0) for t,p in zip(fit_times, fit_prices)]
         predict_time = times[-1] + 2
         expected = np.average([np.polyval(fit, predict_time) for fit in fits])
 
@@ -228,8 +228,8 @@ def trade_coin(from_coin, to_coin, plots=None, max_change=.03, max_wait_minutes=
 
         if plots:
             times_in_hours = [t/60 for t in times]
-            plots['buy actual'] = times_in_hours, prices, dict(linestyle='-')
-            plots['buy fit']    = times_in_hours, [np.polyval(fit, t) for t in times], dict(linestyle='--')
+            plots['trade actual'] = times_in_hours, prices, dict(linestyle='-')
+            plots['trade fit']    = times_in_hours, [np.polyval(fit, t) for t in times], dict(linestyle='--')
 
         now = ticker['timestamp'] / milli_seconds_in_minute
         time_since_fit = now - times[-1]
@@ -255,31 +255,31 @@ def trade_coin(from_coin, to_coin, plots=None, max_change=.03, max_wait_minutes=
         print(f"{side} {amount} {symbol} at {price} ({percentage(difference)})")
 
         try:
-            order = binance.create_order(symbol, 'limit', side, amount, price)
-        except Exception as error:
+            if create_order_and_wait(symbol, side, amount, price):
+                return
+        except Exception:
             # TODO not sure why this happens sometimes...
             print(traceback.format_exc())
             time.sleep(5*60)
-            continue
 
-        del order['info']
-        print(order)
 
-        id = order['id']
-        for i in range(6):
-            time.sleep(5*60)
-            order = binance.fetch_order(id, symbol=symbol)
-            print(f"{order['filled']} / {order['amount']} filled")
-            if order['status'] == 'closed':
-                break
-        else:
-            print(f"Cancelling order {id} {symbol}")
-            binance.cancel_order(id, symbol=symbol)
+def create_order_and_wait(symbol, side, amount, price, type='limit', timeout=30, poll=5):
+    order = binance.create_order(symbol, type, side, amount, price)
+    del order['info']
+    print(order)
 
+    id = order['id']
+    for i in range(int(timeout/poll)):
+        time.sleep(poll*60)
+        order = binance.fetch_order(id, symbol=symbol)
+        print(f"{order['filled']} / {order['amount']} filled")
         if order['status'] == 'closed':
             trade_log.append(order)
             print('')
             return order
+
+    print(f"Cancelling order {id} {symbol}")
+    binance.cancel_order(id, symbol=symbol)
 
 
 def email_myself_plots(subject, coins, log):
@@ -356,7 +356,6 @@ if __name__ == "__main__":
                     from_coin = holding.name
                     result = None
                     coins = get_coin_forecasts()
-                    sleep = 0
                     for i in range(12):
                         coins = get_best_coins(coins)
                         best  = coins[0]
@@ -372,7 +371,19 @@ if __name__ == "__main__":
                                     holding = get_holding_coin()
                                     continue
 
-                                sleep = 60*60*1
+                                if coin != 'BTC':
+                                    start_time = time.time()
+                                    symbol = f"{coin}/BTC"
+                                    assert best.gain > 0
+                                    price  = binance.fetch_ticker(symbol)['last'] * (1 + best.gain)
+                                    amount = binance.fetch_balance()[coin]['free'] * .999
+                                    create_order_and_wait(symbol, 'sell', amount, price, timeout=60*4, poll=10)
+                                    elapsed_time = time.time() - start_time
+
+                                    ohlcv = binance.fetch_ohlcv(symbol, '5m', limit=int(elapsed_time/60/5))
+                                    prices = [np.average(candle[2:-1]) for candle in ohlcv]
+                                    times = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
+                                    plots['holding'] = times, prices, dict(linestyle='-')
 
                             except TimeoutError as error:
                                 result += '...timed out'
@@ -393,7 +404,6 @@ if __name__ == "__main__":
                     # Show relevant plots
                     plot_coins = [coin for coin in coins if coin.name in [from_coin, 'BTC', best.name]]
                     email_myself_plots(result, plot_coins, log.getvalue())
-                    time.sleep(sleep)
 
                 else:
                     """
