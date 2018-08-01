@@ -91,21 +91,22 @@ def get_best_coins(coins):
     tickers = binance.fetch_tickers()
     for coin in coins:
         price = tickers[coin.symbol]['last']
-        coin.gain_lt = (coin.expected_lt - price) / price
 
         ohlcv = binance.fetch_ohlcv(coin.symbol, '5m', limit=48)
         prices = [np.average(candle[2:-1]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
         fit = np.polyfit(times, prices, 1)
+        coin.plots['st actual'] = times, prices, dict(linestyle='-')
+        coin.plots['st fit']    = times, [np.polyval(fit, t) for t in times], dict(linestyle='--')
         expected_st    = np.polyval(fit, times[-1]+6)
         price_on_curve = np.polyval(fit, times[-1])
         coin.gain_st = (expected_st - price_on_curve) / price
         coin.gain_st = clamp(coin.gain_st, -.04, .04)
 
+        coin.gain_lt = (coin.expected_lt - price_on_curve) / price
+
         coin.gain = (coin.gain_lt + coin.gain_st) / 2
         coin.gain_per_hour = np.polyfit(times[-6:], prices[-6:], 1)[0] / price
-        coin.plots['st actual'] = times, prices, dict(linestyle='-')
-        coin.plots['st fit']    = times, [np.polyval(fit, t) for t in times], dict(linestyle='--')
 
         if tickers[coin.symbol]['quoteVolume'] < 100:
             coin.gain = 0
@@ -351,7 +352,7 @@ if __name__ == "__main__":
                 tickers = binance.fetch_tickers()
                 market_trend = np.average([v['percentage'] for k, v in tickers.items() if k.endswith('/BTC')])
                 print(f"Alt coin trend: {market_trend}%")
-                if True or market_trend > 0:
+                if market_trend > 0:
                     holding = get_holding_coin()
                     from_coin = holding.name
                     result = None
@@ -406,6 +407,20 @@ if __name__ == "__main__":
                     email_myself_plots(result, plot_coins, log.getvalue())
 
                 else:
+                    holding = get_holding_coin()
+                    if holding.name != 'BTC':
+                        try:
+                            trade_coin(holding.name, 'BTC')
+                        except:
+                            continue
+
+                    msg = EmailMessage()
+                    msg['Subject'] = "Sleeping while market is bad..."
+                    msg.set_content(log.getvalue())
+                    email_myself(msg)
+
+                    time.sleep(4*60*60)
+
                     """
                     starting_balance = get_balance()
                     for i in range(4):
