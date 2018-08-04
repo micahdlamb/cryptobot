@@ -58,10 +58,11 @@ def get_coin_forecasts():
         prices = [np.average(candle[2:-1]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
 
-        fit_days  = [1, 3]
+        fit_days = [1, 5]
+        fit_degs = [0, 1]
         fit_times  = [times [-days*24:] for days in fit_days]
         fit_prices = [prices[-days*24:] for days in fit_days]
-        fits = [np.polyfit(t, p, 0) for t,p in zip(fit_times, fit_prices)]
+        fits = [np.polyfit(t, p, deg) for t,p,deg in zip(fit_times, fit_prices, fit_degs)]
         predict_time = times[-1] + 2
         expected = np.average([np.polyval(fit, predict_time) for fit in fits])
 
@@ -352,7 +353,7 @@ if __name__ == "__main__":
                 tickers = binance.fetch_tickers()
                 market_trend = np.average([v['percentage'] for k, v in tickers.items() if k.endswith('/BTC')])
                 print(f"Alt coin trend: {market_trend}%")
-                if market_trend > 0:
+                if market_trend > -2:
                     holding = get_holding_coin()
                     from_coin = holding.name
                     result = None
@@ -415,7 +416,7 @@ if __name__ == "__main__":
                             continue
 
                     msg = EmailMessage()
-                    msg['Subject'] = "Sleeping while market is bad..."
+                    msg['Subject'] = f"Sleeping while market is bad {round(market_trend, 2)}%"
                     msg.set_content(log.getvalue())
                     email_myself(msg)
 
