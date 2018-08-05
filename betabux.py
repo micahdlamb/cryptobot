@@ -59,7 +59,7 @@ def get_coin_forecasts():
         times  = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
 
         fit_days = [1, 5]
-        fit_degs = [0, 1]
+        fit_degs = [0, 2]
         fit_times  = [times [-days*24:] for days in fit_days]
         fit_prices = [prices[-days*24:] for days in fit_days]
         fits = [np.polyfit(t, p, deg) for t,p,deg in zip(fit_times, fit_prices, fit_degs)]
@@ -109,8 +109,9 @@ def get_best_coins(coins):
         coin.gain = (coin.gain_lt + coin.gain_st) / 2
         coin.gain_per_hour = np.polyfit(times[-6:], prices[-6:], 1)[0] / price
 
-        if tickers[coin.symbol]['quoteVolume'] < 100:
-            coin.gain = 0
+        #volume = tickers[coin.symbol]['quoteVolume']
+        #if volume < 250:
+        #    coin.gain *= volume / 250
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
     print('\n'.join(f"{coin.name}: {percentage(coin.gain)} lt={percentage(coin.gain_lt)} st={percentage(coin.gain_st)} "
@@ -353,7 +354,7 @@ if __name__ == "__main__":
                 tickers = binance.fetch_tickers()
                 market_trend = np.average([v['percentage'] for k, v in tickers.items() if k.endswith('/BTC')])
                 print(f"Alt coin trend: {market_trend}%")
-                if market_trend > -2:
+                if True or market_trend > -0:
                     holding = get_holding_coin()
                     from_coin = holding.name
                     result = None
