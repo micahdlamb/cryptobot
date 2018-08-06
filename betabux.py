@@ -58,8 +58,8 @@ def get_coin_forecasts():
         prices = [np.average(candle[2:-1]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
 
-        fit_days = [1, 5]
-        fit_degs = [0, 2]
+        fit_days = [1, 7]
+        fit_degs = [0, 1]
         fit_times  = [times [-days*24:] for days in fit_days]
         fit_prices = [prices[-days*24:] for days in fit_days]
         fits = [np.polyfit(t, p, deg) for t,p,deg in zip(fit_times, fit_prices, fit_degs)]
