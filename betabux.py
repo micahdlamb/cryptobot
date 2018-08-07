@@ -99,7 +99,7 @@ def get_best_coins(coins):
         fit = np.polyfit(times, prices, 1)
         coin.plots['st actual'] = times, prices, dict(linestyle='-')
         coin.plots['st fit']    = times, [np.polyval(fit, t) for t in times], dict(linestyle='--')
-        expected_st    = np.polyval(fit, times[-1]+6)
+        expected_st    = np.polyval(fit, times[-1]+8)
         price_on_curve = np.polyval(fit, times[-1])
         coin.gain_st = (expected_st - price_on_curve) / price
         coin.gain_st = clamp(coin.gain_st, -.04, .04)
@@ -204,14 +204,14 @@ def trade_coin(from_coin, to_coin, plots=None, max_change=.03, max_wait_minutes=
             raise TimeoutError(f"{side} of {symbol} didn't get filled")
 
         # Ride any spikes
-        ohlcv = binance.fetch_ohlcv(symbol, '1m', limit=10)
+        ohlcv = binance.fetch_ohlcv(symbol, '1m', limit=30)
         prices = [np.average(candle[2:-1]) for candle in ohlcv]
         times = [candle[0]/milli_seconds_in_minute for candle in ohlcv]
         fit = np.polyfit(times, prices, 1)
         good_rate = fit[0] * good_direction
         if good_rate > 0:
             print('Wait while price moves in good direction...')
-            time.sleep(5*60)
+            time.sleep(15*60)
             continue
 
         ticker = binance.fetch_ticker(symbol)
