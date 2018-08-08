@@ -51,15 +51,16 @@ def get_coin_forecasts():
     class Coin(collections.namedtuple("Coin", "name symbol expected_lt")): pass
     coins = []
     for symbol in symbols():
-        ohlcv = binance.fetch_ohlcv(symbol, '1h', limit=7*24)
-        if len(ohlcv) < 7*24/2:
+        limit = 30*24
+        ohlcv = binance.fetch_ohlcv(symbol, '1h', limit=limit)
+        if len(ohlcv) < limit/2:
             print(f"Skipping {symbol} for missing data. len(ohlcv)={len(ohlcv)}")
             continue
         prices = [np.average(candle[2:-1]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
 
-        fit_days = [7]
-        fit_degs = [2]
+        fit_days = [7, 14, 30]
+        fit_degs = [2, 2,  2]
         fit_times  = [times [-days*24:] for days in fit_days]
         fit_prices = [prices[-days*24:] for days in fit_days]
         fits = [np.polyfit(t, p, deg) for t,p,deg in zip(fit_times, fit_prices, fit_degs)]
