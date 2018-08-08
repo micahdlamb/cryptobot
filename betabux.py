@@ -58,8 +58,8 @@ def get_coin_forecasts():
         prices = [np.average(candle[2:-1]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
 
-        fit_days = [1, 7]
-        fit_degs = [0, 1]
+        fit_days = [7]
+        fit_degs = [2]
         fit_times  = [times [-days*24:] for days in fit_days]
         fit_prices = [prices[-days*24:] for days in fit_days]
         fits = [np.polyfit(t, p, deg) for t,p,deg in zip(fit_times, fit_prices, fit_degs)]
@@ -93,16 +93,16 @@ def get_best_coins(coins):
     for coin in coins:
         price = tickers[coin.symbol]['last']
 
-        ohlcv = binance.fetch_ohlcv(coin.symbol, '5m', limit=48)
+        ohlcv = binance.fetch_ohlcv(coin.symbol, '5m', limit=60)
         prices = [np.average(candle[2:-1]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
         fit = np.polyfit(times, prices, 1)
         coin.plots['st actual'] = times, prices, dict(linestyle='-')
         coin.plots['st fit']    = times, [np.polyval(fit, t) for t in times], dict(linestyle='--')
-        expected_st    = np.polyval(fit, times[-1]+8)
+        expected_st    = np.polyval(fit, times[-1]+10)
         price_on_curve = np.polyval(fit, times[-1])
         coin.gain_st = (expected_st - price_on_curve) / price
-        coin.gain_st = clamp(coin.gain_st, -.04, .04)
+        coin.gain_st = clamp(coin.gain_st, -.05, .05)
 
         coin.gain_lt = (coin.expected_lt - price_on_curve) / price
 
@@ -359,7 +359,7 @@ if __name__ == "__main__":
                     from_coin = holding.name
                     result = None
                     coins = get_coin_forecasts()
-                    for i in range(12):
+                    for i in range(8):
                         coins = get_best_coins(coins)
                         best  = coins[0]
                         hodl  = next(c for c in coins if c.name == holding.name)
@@ -399,7 +399,7 @@ if __name__ == "__main__":
 
                             break
 
-                        time.sleep(20*60)
+                        time.sleep(30*60)
 
                     result = result or f'HODL {hodl.name}'
                     print(result)
