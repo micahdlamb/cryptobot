@@ -94,16 +94,16 @@ def get_best_coins(coins):
     for coin in coins:
         price = tickers[coin.symbol]['last']
 
-        ohlcv = binance.fetch_ohlcv(coin.symbol, '5m', limit=60)
+        ohlcv = binance.fetch_ohlcv(coin.symbol, '5m', limit=72)
         prices = [np.average(candle[2:-1]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
         fit = np.polyfit(times, prices, 1)
         coin.plots['st actual'] = times, prices, dict(linestyle='-')
         coin.plots['st fit']    = times, [np.polyval(fit, t) for t in times], dict(linestyle='--')
-        expected_st    = np.polyval(fit, times[-1]+10)
+        expected_st    = np.polyval(fit, times[-1]+12)
         price_on_curve = np.polyval(fit, times[-1])
         coin.gain_st = (expected_st - price_on_curve) / price
-        coin.gain_st = clamp(coin.gain_st, -.05, .05)
+        coin.gain_st = clamp(coin.gain_st, -.06, .06)
 
         coin.gain_lt = (coin.expected_lt - price_on_curve) / price
 
