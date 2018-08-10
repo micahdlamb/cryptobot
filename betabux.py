@@ -59,8 +59,8 @@ def get_coin_forecasts():
         prices = [np.average(candle[2:-1]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
 
-        fit_days = [3, 7, 14, 30]
-        fit_degs = [1, 2, 2,  2]
+        fit_days = [4, 8,16,32]
+        fit_degs = [1, 1, 1, 1]
         fit_times  = [times [-days*24:] for days in fit_days]
         fit_prices = [prices[-days*24:] for days in fit_days]
         fits = [np.polyfit(t, p, deg) for t,p,deg in zip(fit_times, fit_prices, fit_degs)]
@@ -353,17 +353,24 @@ if __name__ == "__main__":
         try:
             with io.StringIO() as log, contextlib.redirect_stdout(Tee(log, sys.stdout)):
                 tickers = binance.fetch_tickers()
-                market_trend = np.average([v['percentage'] for k, v in tickers.items() if k.endswith('/BTC')])
-                print(f"Alt coin trend: {market_trend}%")
-                if True or market_trend > -0:
+                market_delta = np.average([v['percentage'] for k, v in tickers.items() if k.endswith('/BTC')])
+                print(f"24 hour alt coin change: {market_delta}%")
+                if True or market_delta > -0:
                     holding = get_holding_coin()
                     from_coin = holding.name
                     result = None
                     coins = get_coin_forecasts()
                     for i in range(8):
-                        coins = get_best_coins(coins)
-                        best  = coins[0]
                         hodl  = next(c for c in coins if c.name == holding.name)
+                        coins = get_best_coins(coins)
+                        gain_st = np.average([coin.gain_st for coin in coins])
+                        print(f'Average gain_st={percentage(gain_st)}')
+                        if gain_st > -.01:
+                            best = coins[0]
+                        else:
+                            btc  = next(c for c in coins if c.name == 'BTC')
+                            tusd = next(c for c in coins if c.name == 'TUSD')
+                            best = btc if btc.gain > tusd.gain else tusd
 
                         if best != hodl:
                             try:
