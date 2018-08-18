@@ -13,7 +13,7 @@ Investigate multiple limit orders at once
 np.fft.fft to get frequency and amplitude
 """
 
-import os, sys, time, collections, io, contextlib, traceback
+import os, sys, time, math, collections, io, contextlib, traceback
 import smtplib
 from email.message import EmailMessage
 from email.utils import make_msgid
@@ -39,11 +39,8 @@ percentage = lambda value: f"{round(value*100, 2)}%"
 
 
 def symbols():
-    def keep(symbol):
-        return symbol.endswith('/BTC')
-
-    tickers = binance.fetch_tickers()
-    return ['BTC/USDT'] + [symbol for symbol in tickers if keep(symbol)]
+    return ['BTC/USDT'] + [symbol for symbol, market in binance.markets.items()
+                           if market['active'] and symbol.endswith('/BTC')]
 
 
 def get_coin_forecasts():
@@ -59,12 +56,12 @@ def get_coin_forecasts():
         prices = [np.average(candle[2:4]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
 
-        fit_days = [2, 4, 8]
-        fit_degs = [1, 1, 1]
+        fit_days = [1, 2, 4, 8]
+        fit_degs = [1, 1, 1, 1]
         fit_times  = [times [-days*24:] for days in fit_days]
         fit_prices = [prices[-days*24:] for days in fit_days]
         fits = [np.polyfit(t, p, deg) for t,p,deg in zip(fit_times, fit_prices, fit_degs)]
-        predict_time = times[-1] + 6
+        predict_time = times[-1] + 4
         expected = np.average([np.polyval(fit, predict_time) for fit in fits])
 
         plot_times, plot_prices = times[-16:], prices[-16:]
@@ -93,8 +90,8 @@ def get_best_coins(coins):
         prices = [np.average(candle[2:4]) for candle in ohlcv]
         times  = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
 
-        fit_hours = [2, 4, 8]
-        fit_degs = [1, 1, 1]
+        fit_hours = [1, 2, 4, 8]
+        fit_degs  = [1, 1, 1, 1]
         fit_times  = [times [-hour*12:] for hour in fit_hours]
         fit_prices = [prices[-hour*12:] for hour in fit_hours]
         fits = [np.polyfit(t, p, deg) for t,p,deg in zip(fit_times, fit_prices, fit_degs)]
@@ -121,7 +118,7 @@ def get_best_coins(coins):
                     f"dy/dx={percentage(coin.dy_dx)}/h" for coin in coins[:4]))
     return coins
 
-
+"""
 def get_most_volatile_coins():
     print('Finding most spiky coins')
     class Coin(collections.namedtuple("Coin", "name goodness fit amplitude")): pass
@@ -148,7 +145,7 @@ def get_most_volatile_coins():
     print('\n'.join(f"{coin.name}: amplitude={percentage(coin.amplitude)} fit={percentage(coin.fit*60)}/h"
                     for coin in coins[:4]))
     return coins
-
+"""
 
 def get_balance():
     def to_btc(coin, amount):
@@ -185,6 +182,15 @@ def get_holding_coin():
             print(f"WARNING {coin.amount_used} {coin.name} is used")
     
     return max(balance.coins.values(), key=lambda coin: coin.btc_free)
+
+
+def round_price_up(symbol, price):
+    scale = pow(10, binance.markets[symbol]['precision']['price'])
+    return math.ceil(price * scale) / scale
+
+def round_price_down(symbol, price):
+    scale = pow(10, binance.markets[symbol]['precision']['price'])
+    return math.floor(price * scale) / scale
 
 
 trade_log = []
@@ -252,13 +258,12 @@ def trade_coin(from_coin, to_coin, plots=None, max_change=.03, max_wait_minutes=
         else:
             price = np.polyval(fit, now + 10) + good_direction * amplitude / 2
 
-        # .999 for .1 % binance fee - not sure if needed?
-        holding_amount = binance.fetch_balance()[from_coin]['free'] * .999
+        holding_amount = binance.fetch_balance()[from_coin]['free']
         if side == 'buy':
-            price  = min(price, current_price*1.001)
-            amount = holding_amount / price
+            price  = round_price_down(symbol, min(price, current_price*1.001))
+            amount = binance.amount_to_lots(holding_amount / price)
         else:
-            price  = max(price, current_price*.999)
+            price  = round_price_up(symbol, max(price, current_price*.999))
             amount = holding_amount
 
         difference = (price - current_price) / current_price
@@ -389,15 +394,17 @@ if __name__ == "__main__":
                                 holding = get_holding_coin()
                                 continue
 
-                            if coin != 'BTC':
+                            if coin == best.name:
                                 start_time = time.time()
-                                symbol = f"{coin}/BTC"
-                                price  = filled_order['price'] * (1 + max(best.gain, .02))
-                                amount = binance.fetch_balance()[coin]['free'] * .999
-                                create_order_and_wait(symbol, 'sell', amount, price, timeout=60*4, poll=10)
+                                if coin == "BTC":
+                                    time.sleep(60*2)
+                                else:
+                                    price  = round_price_up(filled_order['price'] * (1 + max(best.gain, .02)))
+                                    amount = binance.fetch_balance()[coin]['free'] * .999
+                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=60*4, poll=10)
                                 elapsed_time = time.time() - start_time
 
-                                ohlcv = binance.fetch_ohlcv(symbol, '5m', limit=int(elapsed_time/60/5))
+                                ohlcv = binance.fetch_ohlcv(best.symbol, '5m', limit=int(elapsed_time/60/5))
                                 prices = [np.average(candle[2:4]) for candle in ohlcv]
                                 times = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
                                 plots['holding'] = times, prices, dict(linestyle='-')
