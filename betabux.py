@@ -359,6 +359,9 @@ class Tee:
     def write(self, data):
         for file in self.files:
             file.write(data)
+    def flush(self):
+        for file in self.files:
+            file.flush()
 
 if __name__ == "__main__":
     while True:
