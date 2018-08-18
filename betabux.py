@@ -95,7 +95,7 @@ def get_best_coins(coins):
         fit_times  = [times [-hour*12:] for hour in fit_hours]
         fit_prices = [prices[-hour*12:] for hour in fit_hours]
         fits = [np.polyfit(t, p, deg) for t,p,deg in zip(fit_times, fit_prices, fit_degs)]
-        predict_time = times[-1] + 6
+        predict_time = times[-1] + 4
         coin.expected_st = np.average([np.polyval(fit, predict_time) for fit in fits])
 
         coin.plots["st actual"] = times, prices, dict(linestyle='-')
