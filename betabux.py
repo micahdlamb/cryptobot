@@ -185,11 +185,11 @@ def get_holding_coin():
 
 
 def round_price_up(symbol, price):
-    scale = pow(10, binance.markets[symbol]['precision']['price'])
+    scale = 10**binance.markets[symbol]['precision']['price']
     return math.ceil(price * scale) / scale
 
 def round_price_down(symbol, price):
-    scale = pow(10, binance.markets[symbol]['precision']['price'])
+    scale = 10**binance.markets[symbol]['precision']['price']
     return math.floor(price * scale) / scale
 
 
@@ -261,7 +261,7 @@ def trade_coin(from_coin, to_coin, plots=None, max_change=.03, max_wait_minutes=
         holding_amount = binance.fetch_balance()[from_coin]['free']
         if side == 'buy':
             price  = round_price_down(symbol, min(price, current_price*1.001))
-            amount = binance.amount_to_lots(holding_amount / price)
+            amount = binance.amount_to_lots(symbol, holding_amount / price)
         else:
             price  = round_price_up(symbol, max(price, current_price*.999))
             amount = holding_amount
