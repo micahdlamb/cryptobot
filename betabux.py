@@ -254,16 +254,16 @@ def trade_coin(from_coin, to_coin, plots=None, max_change=.03, max_wait_minutes=
             print(f"Warning: ticker time is {now - times[-1]} minutes after ohlcv time")
 
         if good_rate > 0:
-            price = np.polyval(fit, now + 20) + good_direction * amplitude / 2
+            price = np.polyval(fit, now + 25) + good_direction * amplitude / 2
         else:
-            price = np.polyval(fit, now + 10) + good_direction * amplitude / 2
+            price = np.polyval(fit, now + 5) + good_direction * amplitude / 2
 
         holding_amount = binance.fetch_balance()[from_coin]['free']
         if side == 'buy':
-            price  = round_price_down(symbol, min(price, current_price*1.001))
+            price  = round_price_down(symbol, min(price, current_price*1.005))
             amount = binance.amount_to_lots(symbol, holding_amount / price)
         else:
-            price  = round_price_up(symbol, max(price, current_price*.999))
+            price  = round_price_up(symbol, max(price, current_price*.995))
             amount = holding_amount
 
         difference = (price - current_price) / current_price
@@ -280,7 +280,7 @@ def trade_coin(from_coin, to_coin, plots=None, max_change=.03, max_wait_minutes=
             time.sleep(5*60)
 
 
-def create_order_and_wait(symbol, side, amount, price, type='limit', timeout=30, poll=5):
+def create_order_and_wait(symbol, side, amount, price, type='limit', timeout=30, poll=3):
     order = binance.create_order(symbol, type, side, amount, price)
     del order['info']
     print(order)
