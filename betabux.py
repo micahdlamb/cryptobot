@@ -402,8 +402,8 @@ if __name__ == "__main__":
                                 if coin == "BTC":
                                     time.sleep(60*2)
                                 else:
-                                    price  = round_price_up(filled_order['price'] * (1 + max(best.gain, .02)))
-                                    amount = binance.fetch_balance()[coin]['free'] * .999
+                                    price  = round_price_up(best.symbol, filled_order['price'] * (1 + max(best.gain, .02)))
+                                    amount = binance.fetch_balance()[coin]['free']
                                     create_order_and_wait(best.symbol, 'sell', amount, price, timeout=60*4, poll=10)
                                 elapsed_time = time.time() - start_time
 
