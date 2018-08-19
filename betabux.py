@@ -43,18 +43,24 @@ def symbols():
                            if market['active'] and symbol.endswith('/BTC')]
 
 
+def get_prices(symbol, timeFrame, limit):
+    ohlcv = binance.fetch_ohlcv(symbol, timeFrame, limit=limit)
+    prices = [np.average(candle[2:4]) for candle in ohlcv]
+    to_center = (ohlcv[-1][0] - ohlcv[-2][0])/2
+    times = [(candle[0] + to_center) / milli_seconds_in_hour for candle in ohlcv]
+    return times, prices
+
+
 def get_coin_forecasts():
     print('Forecasting coin prices...')
     class Coin(collections.namedtuple("Coin", "name symbol expected_lt")): pass
     coins = []
     for symbol in symbols():
         limit = 30*24
-        ohlcv = binance.fetch_ohlcv(symbol, '1h', limit=limit)
-        if len(ohlcv) < limit/2:
+        times, prices = get_prices(symbol, '1h', limit=limit)
+        if len(times) < limit/2:
             print(f"Skipping {symbol} for missing data. len(ohlcv)={len(ohlcv)}")
             continue
-        prices = [np.average(candle[2:4]) for candle in ohlcv]
-        times  = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
 
         fit_days = [1, 2, 4, 8]
         fit_degs = [1, 1, 1, 1]
@@ -86,9 +92,7 @@ def get_best_coins(coins):
     print('Looking for best coins...')
     tickers = binance.fetch_tickers()
     for coin in coins:
-        ohlcv = binance.fetch_ohlcv(coin.symbol, '5m', limit=8*12)
-        prices = [np.average(candle[2:4]) for candle in ohlcv]
-        times  = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
+        times, prices = get_prices(coin.symbol, '5m', limit=8*12)
 
         fit_hours = [1, 2, 4, 8]
         fit_degs  = [1, 1, 1, 1]
@@ -217,14 +221,12 @@ def trade_coin(from_coin, to_coin, plots=None, max_change=.03, max_wait_minutes=
             raise TimeoutError(f"{side} of {symbol} didn't get filled")
 
         # Ride any spikes
-        ohlcv = binance.fetch_ohlcv(symbol, '1m', limit=30)
-        prices = [np.average(candle[2:4]) for candle in ohlcv]
-        times = [candle[0]/milli_seconds_in_minute for candle in ohlcv]
+        times, prices = get_prices(symbol, '1m', limit=15)
         fit = np.polyfit(times, prices, 1)
         good_rate = fit[0] * good_direction
         if good_rate > 0:
             print('Wait while price moves in good direction...')
-            time.sleep(15*60)
+            time.sleep(10*60)
             continue
 
         ticker = binance.fetch_ticker(symbol)
@@ -243,7 +245,7 @@ def trade_coin(from_coin, to_coin, plots=None, max_change=.03, max_wait_minutes=
         print(f"good rate {percentage(good_rate*60/current_price)}/h amplitude {percentage(amplitude/current_price)}")
 
         if plots:
-            times_in_hours = [t/60 for t in times]
+            times_in_hours = [t/60+1/8 for t in times]
             plots['trade actual'] = times_in_hours, prices, dict(linestyle='-')
             plots['trade fit']    = times_in_hours, [np.polyval(fit, t) for t in times], dict(linestyle='--')
 
@@ -291,6 +293,8 @@ def create_order_and_wait(symbol, side, amount, price, type='limit', timeout=30,
         order = binance.fetch_order(id, symbol=symbol)
         print(f"{order['filled']} / {order['amount']} filled")
         if order['status'] == 'closed':
+            from datetime import datetime
+            order['fill_time'] = datetime.now().timestamp() / 3600
             trade_log.append(order)
             print('')
             return order
@@ -321,7 +325,7 @@ def email_myself_plots(subject, coins, log):
 
         for trade in trade_log:
             if trade['symbol'] == coin.symbol:
-                x = trade['timestamp'] / milli_seconds_in_hour - coin.zero_time
+                x = trade['fill_time'] - coin.zero_time
                 y = trade['price']
                 plt.text(x, y, trade['side'][0])
 
