@@ -56,10 +56,9 @@ def get_coin_forecasts():
     class Coin(collections.namedtuple("Coin", "name symbol expected_lt")): pass
     coins = []
     for symbol in symbols():
-        limit = 30*24
-        times, prices = get_prices(symbol, '1h', limit=limit)
-        if len(times) < limit/2:
-            print(f"Skipping {symbol} for missing data. len(ohlcv)={len(ohlcv)}")
+        times, prices = get_prices(symbol, '1h', limit=8*24)
+        if len(times) < 4*24:
+            print(f"Skipping {symbol} for missing data. len(ohlcv)={len(times)}")
             continue
 
         fit_days = [1, 2, 4, 8]
@@ -379,7 +378,7 @@ if __name__ == "__main__":
                 from_coin = holding.name
                 result = None
                 coins = get_coin_forecasts()
-                for i in range(8):
+                for i in range(16):
                     hodl  = next(c for c in coins if c.name == holding.name)
                     coins = get_best_coins(coins)
                     trend = np.average([coin.trend for coin in coins])
@@ -411,9 +410,7 @@ if __name__ == "__main__":
                                     create_order_and_wait(best.symbol, 'sell', amount, price, timeout=60*4, poll=10)
                                 elapsed_time = time.time() - start_time
 
-                                ohlcv = binance.fetch_ohlcv(best.symbol, '5m', limit=int(elapsed_time/60/5))
-                                prices = [np.average(candle[2:4]) for candle in ohlcv]
-                                times = [candle[0] / milli_seconds_in_hour for candle in ohlcv]
+                                times, prices = get_prices(best.symbol, '5m', limit=int(elapsed_time/60/5))
                                 plots['holding'] = times, prices, dict(linestyle='-')
 
                         except TimeoutError as error:
@@ -427,7 +424,7 @@ if __name__ == "__main__":
 
                         break
 
-                    time.sleep(30*60)
+                    time.sleep(15*60)
 
                 result = result or f'HODL {hodl.name}'
                 print(result)
