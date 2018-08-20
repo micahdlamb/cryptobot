@@ -229,14 +229,15 @@ def trade_coin(from_coin, to_coin, plots=None, max_change=.03, max_wait_minutes=
             continue
 
         ticker = binance.fetch_ticker(symbol)
+        now = ticker['timestamp'] / milli_seconds_in_minute
         current_price = ticker['last']
         good_change   = good_direction * (current_price - start_price) / start_price
         if good_change < -max_change:
             raise TimeoutError(f"{side} of {symbol} aborted due to price change of {percentage(abs(good_change))}")
 
         ohlcv = binance.fetch_ohlcv(symbol, '15m', limit=4)
-        prices = [np.average(candle[2:4]) for candle in ohlcv]
-        times = [candle[0]/milli_seconds_in_minute for candle in ohlcv]
+        prices = [np.average(candle[2:4]) for candle in ohlcv] + [current_price]
+        times = [candle[0]/milli_seconds_in_minute for candle in ohlcv] + [now]
         fit = np.polyfit(times, prices, 1)
         good_rate = fit[0] * good_direction
         amplitude = (sum(abs(candle[3]-candle[2]) for candle in ohlcv) - abs(fit[0]*15*4)) / len(ohlcv)
@@ -248,7 +249,6 @@ def trade_coin(from_coin, to_coin, plots=None, max_change=.03, max_wait_minutes=
             plots['trade actual'] = times_in_hours, prices, dict(linestyle='-')
             plots['trade fit']    = times_in_hours, [np.polyval(fit, t) for t in times], dict(linestyle='--')
 
-        now = ticker['timestamp'] / milli_seconds_in_minute
         time_since_fit = now - times[-1]
         if not (0 <= time_since_fit <= 15):
             assert 0 <= time_since_fit <= 30, time_since_fit
