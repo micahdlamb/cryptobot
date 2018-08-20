@@ -111,7 +111,7 @@ def get_best_coins(coins):
         assert price > 0, coin.symbol
         coin.gain_st = (coin.expected_st - price) / price
         coin.gain_lt = (coin.expected_lt - price) / price
-        coin.gain = mix(coin.gain_lt, coin.gain_st, .5)
+        coin.gain = mix(coin.gain_lt, -coin.gain_st, .5)
 
         coin.trend = np.polyfit(times[-48:], prices[-48:], 1)[0] / price
         coin.dy_dx = np.polyfit(times[ -6:], prices[ -6:], 1)[0] / price
