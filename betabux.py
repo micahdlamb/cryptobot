@@ -78,18 +78,24 @@ def get_best_coins(coins):
         ticker = tickers[coin.symbol]
         now = ticker['timestamp'] / milli_seconds_in_hour
         current_price = ticker['last']
+        tickSize = 10 ** -binance.markets[coin.symbol]['precision']['price']
 
-        ohlcv = binance.fetch_ohlcv(coin.symbol, '6h', limit=4)
-        times = [candle[0]/milli_seconds_in_hour + 3 for candle in ohlcv]
-        prices = [np.average(candle[2:4]) for candle in ohlcv]
-        fit = np.polyfit(times, prices, 1)
-        tickSize = 10**-binance.markets[coin.symbol]['precision']['price']
-        delta = lambda candle: clamp(candle[2]-candle[3]-tickSize, 0, current_price*.1)
-        amplitude = (sum(delta(candle) for candle in ohlcv) - abs(fit[0] * 24)) / len(ohlcv)
-        max_price = np.average(ohlcv[-1][2:4]) + amplitude/2
+        def amp(ohlcv):
+            times  = [candle[0]/milli_seconds_in_hour for candle in ohlcv]
+            prices = [np.average(candle[2:4]) for candle in ohlcv]
+            slope = np.polyfit(times, prices, 1)[0]
+            high = max(candle[2] for candle in ohlcv)
+            low  = min(candle[3] for candle in ohlcv)
+            return clamp(high-low-tickSize-abs(slope*len(ohlcv)), 0, current_price*.08)
+
+        ohlcv = binance.fetch_ohlcv(coin.symbol, '1h', limit=24)
+        amps    = [amp(ohlcv[i:i+6]) for i in range(0, len(ohlcv), 6)]
+        weights = [.2, .2, .3, .3]
+        amplitude = sum(amp * weight for amp, weight in zip(amps, weights))
+        peak      = np.average(ohlcv[-1][2:4]) + amplitude/2
         coin.amplitude = amplitude / current_price
         coin.gain_lt = coin.trend_lt * 6 / current_price
-        coin.gain_st = clamp(max_price - current_price, 0, amplitude) / current_price
+        coin.gain_st = clamp(peak - current_price, 0, amplitude) / current_price
         coin.gain = coin.gain_st + coin.gain_lt
 
         times, prices = get_prices(coin.symbol, '5m', limit=3*12)
@@ -339,9 +345,7 @@ if __name__ == "__main__":
                     if trend > -.005:
                         best = coins[0]
                     else:
-                        btc  = next(c for c in coins if c.name == 'BTC')
-                        tusd = next(c for c in coins if c.name == 'TUSD')
-                        best = btc if btc.gain > tusd.gain else tusd
+                        best = next(c for c in coins if c.name == 'TUSD')
 
                     if best != hodl:
                         try:
