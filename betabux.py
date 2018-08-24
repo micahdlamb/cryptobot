@@ -89,17 +89,17 @@ def get_best_coins(coins):
             return clamp(high-low-tickSize-abs(slope*len(ohlcv)), 0, current_price*.08)
 
         ohlcv = binance.fetch_ohlcv(coin.symbol, '1h', limit=24)
-        amps    = [amp(ohlcv[i:i+6]) for i in range(0, len(ohlcv), 6)]
-        weights = [.2, .2, .3, .3]
+        amps    = [amp(ohlcv[i:i+4]) for i in range(0, len(ohlcv), 4)]
+        weights = [.1, .1, .2, .2, .2, .2]
         amplitude = sum(amp * weight for amp, weight in zip(amps, weights))
-        peak      = np.average(ohlcv[-1][2:4]) + amplitude/2
+        zero      = np.average(ohlcv[-1][2:4])
         coin.amplitude = amplitude / current_price
-        coin.gain_lt = coin.trend_lt * 6 / current_price
-        coin.gain_st = clamp(peak - current_price, 0, amplitude) / current_price
+        coin.gain_lt = coin.trend_lt * 4 / current_price
+        coin.gain_st = clamp(zero - current_price, 0, amplitude/2) / current_price
         coin.gain = coin.gain_st + coin.gain_lt
 
-        times, prices = get_prices(coin.symbol, '5m', limit=3*12)
-        coin.trend = np.polyfit(times, prices, 1)[0] / current_price
+        times, prices = get_prices(coin.symbol, '5m', limit=6*12)
+        coin.trend = np.polyfit(times[-3*12:], prices[-3*12:], 1)[0] / current_price
         coin.dy_dx = np.polyfit(times[-6:], prices[-6:], 1)[0] / current_price
         coin.plots["recent"] = times, prices, dict(linestyle='-')
 
@@ -214,16 +214,16 @@ def trade_coin(from_coin, to_coin, plots=None, max_change=.03, max_wait_minutes=
             print(f"Warning: ticker time is {now - times[-1]} minutes after ohlcv time")
 
         if good_rate > 0:
-            price = np.polyval(fit, now + 25) + good_direction * amplitude / 2
+            price = np.polyval(fit, now + 20) + good_direction * amplitude / 2
         else:
-            price = np.polyval(fit, now + 5) + good_direction * amplitude / 2
+            price = np.polyval(fit, now + 10) + good_direction * amplitude / 2
 
         holding_amount = binance.fetch_balance()[from_coin]['free']
         if side == 'buy':
-            price  = round_price_down(symbol, min(price, current_price*1.005))
+            price  = round_price_down(symbol, min(price, current_price*1.003))
             amount = binance.amount_to_lots(symbol, holding_amount / price)
         else:
-            price  = round_price_up(symbol, max(price, current_price*.995))
+            price  = round_price_up(symbol, max(price, current_price*.997))
             amount = holding_amount
 
         difference = (price - current_price) / current_price
@@ -362,9 +362,10 @@ if __name__ == "__main__":
                                 if coin == "BTC":
                                     time.sleep(60*2)
                                 else:
-                                    price  = round_price_up(best.symbol, filled_order['price'] * (1 + max(best.gain, .02)))
+                                    gain_factor = 1 + max(best.gain, .012)
+                                    price  = round_price_up(best.symbol, filled_order['price'] * gain_factor)
                                     amount = binance.fetch_balance()[coin]['free']
-                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=60*6, poll=10)
+                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=60*4, poll=10)
                                 elapsed_time = time.time() - start_time
 
                                 times, prices = get_prices(best.symbol, '5m', limit=int(elapsed_time/60/5))
