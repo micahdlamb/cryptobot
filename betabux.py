@@ -76,7 +76,6 @@ def get_best_coins(coins):
     tickers = binance.fetch_tickers()
     for coin in coins:
         ticker = tickers[coin.symbol]
-        now = ticker['timestamp'] / milli_seconds_in_hour
         current_price = ticker['last']
         tickSize = 10 ** -binance.markets[coin.symbol]['precision']['price']
 
@@ -86,16 +85,15 @@ def get_best_coins(coins):
             slope = np.polyfit(times, prices, 1)[0]
             high = max(candle[2] for candle in ohlcv)
             low  = min(candle[3] for candle in ohlcv)
-            return clamp(high-low-tickSize-abs(slope*len(ohlcv)), 0, current_price*.08)
+            return clamp(high-low-tickSize-abs(slope*len(ohlcv)), 0, current_price*.06)
 
         ohlcv = binance.fetch_ohlcv(coin.symbol, '1h', limit=24)
         amps    = [amp(ohlcv[i:i+4]) for i in range(0, len(ohlcv), 4)]
         weights = [.1, .1, .2, .2, .2, .2]
         amplitude = sum(amp * weight for amp, weight in zip(amps, weights))
-        zero      = np.average(ohlcv[-1][2:4])
         coin.amplitude = amplitude / current_price
         coin.gain_lt = coin.trend_lt * 4 / current_price
-        coin.gain_st = clamp(zero - current_price, 0, amplitude/2) / current_price
+        coin.gain_st = amplitude/2 / current_price
         coin.gain = coin.gain_st + coin.gain_lt
 
         times, prices = get_prices(coin.symbol, '5m', limit=6*12)
@@ -365,7 +363,7 @@ if __name__ == "__main__":
                                     gain_factor = 1 + max(best.gain, .012)
                                     price  = round_price_up(best.symbol, filled_order['price'] * gain_factor)
                                     amount = binance.fetch_balance()[coin]['free']
-                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=60*4, poll=10)
+                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=60*6, poll=10)
                                 elapsed_time = time.time() - start_time
 
                                 times, prices = get_prices(best.symbol, '5m', limit=int(elapsed_time/60/5))
