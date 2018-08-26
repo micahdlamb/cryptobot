@@ -56,8 +56,8 @@ def get_longterm_trend():
     class Coin(collections.namedtuple("Coin", "name symbol trend_lt")): pass
     coins = []
     for symbol in symbols():
-        times, prices = get_prices(symbol, '1h', limit=8*24)
-        if len(times) < 4*24:
+        times, prices = get_prices(symbol, '1h', limit=7*24)
+        if len(times) < 2*24:
             print(f"Skipping {symbol} for missing data. len(ohlcv)={len(times)}")
             continue
 
@@ -79,24 +79,26 @@ def get_best_coins(coins):
         current_price = ticker['last']
         tickSize = 10 ** -binance.markets[coin.symbol]['precision']['price']
 
-        def amp(ohlcv):
+        def noise_amplitude(ohlcv):
             times  = [candle[0]/milli_seconds_in_hour for candle in ohlcv]
             prices = [np.average(candle[2:4]) for candle in ohlcv]
             slope = np.polyfit(times, prices, 1)[0]
             high = max(candle[2] for candle in ohlcv)
             low  = min(candle[3] for candle in ohlcv)
-            return clamp(high-low-tickSize-abs(slope*len(ohlcv)), 0, current_price*.06)
+            punish_slope = 2
+            return clamp(high-low-tickSize-abs(slope*len(ohlcv)*punish_slope), 0, current_price*.06)
 
         ohlcv = binance.fetch_ohlcv(coin.symbol, '1h', limit=24)
-        amps    = [amp(ohlcv[i:i+4]) for i in range(0, len(ohlcv), 4)]
-        weights = [.1, .1, .2, .2, .2, .2]
-        amplitude = sum(amp * weight for amp, weight in zip(amps, weights))
+        noise_amps = [noise_amplitude(ohlcv[i:i+4]) for i in range(0, len(ohlcv), 4)]
+        weights = [.1, .1, .1, .2, .2, .3]
+        amplitude = sum(amp * weight for amp, weight in zip(noise_amps, weights))
+        recent_peak = max(candle[2] for candle in ohlcv[-4:])
         coin.amplitude = amplitude / current_price
         coin.gain_lt = coin.trend_lt * 4 / current_price
-        coin.gain_st = amplitude/2 / current_price
-        coin.gain = coin.gain_st + coin.gain_lt
+        coin.gain_st = clamp(recent_peak - current_price, 0, amplitude*.85) / current_price
+        coin.gain = mix(coin.gain_lt, coin.gain_st, .85)
 
-        times, prices = get_prices(coin.symbol, '5m', limit=6*12)
+        times, prices = get_prices(coin.symbol, '5m', limit=8*12)
         coin.trend = np.polyfit(times[-3*12:], prices[-3*12:], 1)[0] / current_price
         coin.dy_dx = np.polyfit(times[-6:], prices[-6:], 1)[0] / current_price
         coin.plots["recent"] = times, prices, dict(linestyle='-')
@@ -198,7 +200,7 @@ def trade_coin(from_coin, to_coin, plots=None, max_change=.03, max_wait_minutes=
         fit = np.polyfit(times, prices, 1)
         good_rate = fit[0] * good_direction
         amplitude = (sum(candle[2]-candle[3] for candle in ohlcv) - abs(fit[0]*15*4)) / len(ohlcv)
-        assert amplitude > 0, amplitude
+        assert amplitude >= 0, amplitude
         print(f"good rate {percentage(good_rate*60/current_price)}/h amplitude {percentage(amplitude/current_price)}")
 
         if plots:
@@ -209,12 +211,12 @@ def trade_coin(from_coin, to_coin, plots=None, max_change=.03, max_wait_minutes=
         time_since_fit = now - times[-1]
         if not (0 <= time_since_fit <= 15):
             assert 0 <= time_since_fit <= 30, time_since_fit
-            print(f"Warning: ticker time is {now - times[-1]} minutes after ohlcv time")
+            print(f"Warning: ticker time is {time_since_fit} minutes after ohlcv time")
 
         if good_rate > 0:
-            price = np.polyval(fit, now + 20) + good_direction * amplitude / 2
+            price = np.polyval(fit, now + 20) + good_direction * amplitude/3
         else:
-            price = np.polyval(fit, now + 10) + good_direction * amplitude / 2
+            price = np.polyval(fit, now + 10) + good_direction * amplitude/3
 
         holding_amount = binance.fetch_balance()[from_coin]['free']
         if side == 'buy':
