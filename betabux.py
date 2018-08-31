@@ -2,6 +2,7 @@
 Ideas to try:
 Simulate cost function to evaluate how good...
 Tensor flow
+Look at order book
 """
 
 import os, sys, time, math, collections, io, contextlib, traceback
@@ -85,7 +86,8 @@ def get_best_coins(coins):
         times, prices = get_prices(coin.symbol, '5m', limit=8*12)
         coin.plots["st actual"] = times, prices, dict(linestyle='-')
         price = tickers[coin.symbol]['last']
-        coin.gain = (coin.expected_lt - price) / price
+        tickSize = 10 ** -binance.markets[coin.symbol]['precision']['price']
+        coin.gain = (coin.expected_lt - price - tickSize) / price
         coin.trend = np.polyfit(times[-48:], prices[-48:], 1)[0] / price
         coin.dy_dx = np.polyfit(times[ -6:], prices[ -6:], 1)[0] / price
 
