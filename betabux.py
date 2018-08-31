@@ -51,20 +51,36 @@ def get_prices(symbol, timeFrame, limit):
     return times, prices
 
 
-def get_longterm_trend():
+def get_coin_forecasts():
     print('Forecasting coin prices...')
-    class Coin(collections.namedtuple("Coin", "name symbol trend_lt")): pass
+    class Coin(collections.namedtuple("Coin", "name symbol expected_lt")): pass
     coins = []
     for symbol in symbols():
-        times, prices = get_prices(symbol, '1h', limit=7*24)
-        if len(times) < 2*24:
+        times, prices = get_prices(symbol, '1h', limit=16*24)
+        if len(times) < 8*24:
             print(f"Skipping {symbol} for missing data. len(ohlcv)={len(times)}")
             continue
 
+        fit_days = [4, 8, 16]
+        fit_degs = [2, 2, 2]
+        fit_times  = [times [-days*24:] for days in fit_days]
+        fit_prices = [prices[-days*24:] for days in fit_days]
+        fits = [np.polyfit(t, p, deg) for t,p,deg in zip(fit_times, fit_prices, fit_degs)]
+        predict_time = times[-1] + 12
+        expected = np.average([np.polyval(fit, predict_time) for fit in fits])
+
+        plot_times, plot_prices = times[-16:], prices[-16:]
+        plots = {"lt actual": (plot_times, plot_prices, dict(linestyle='-', marker='o'))}
+        for days, fit in zip(fit_days, fits):
+            times = plot_times[-days*24:]
+            fit_times  = np.linspace(times[0], times[-1], len(times) * 2)
+            fit_prices = [np.polyval(fit, time) for time in fit_times]
+            plots[f"{days} day fit"] = (fit_times, fit_prices, dict(linestyle='--'))
+
+
         name = symbol.split('/')[0]
-        fit = np.polyfit(times, prices, 1)
-        coin = Coin(name, symbol, fit[0])
-        coin.plots = {"lt actual": (times[-16:], prices[-16:], dict(linestyle='-', marker='o'))}
+        coin = Coin(name, symbol, expected) # coin.gain set in get_best_coins
+        coin.plots = plots
         coin.zero_time = times[-1]
         coins.append(coin)
 
@@ -75,37 +91,15 @@ def get_best_coins(coins):
     print('Looking for best coins...')
     tickers = binance.fetch_tickers()
     for coin in coins:
-        ticker = tickers[coin.symbol]
-        current_price = ticker['last']
-        tickSize = 10 ** -binance.markets[coin.symbol]['precision']['price']
-
-        def noise_amplitude(ohlcv):
-            times  = [candle[0]/milli_seconds_in_hour for candle in ohlcv]
-            prices = [np.average(candle[2:4]) for candle in ohlcv]
-            slope = np.polyfit(times, prices, 1)[0]
-            high = max(candle[2] for candle in ohlcv)
-            low  = min(candle[3] for candle in ohlcv)
-            punish_slope = 2
-            return clamp(high-low-tickSize-abs(slope*len(ohlcv)*punish_slope), 0, current_price*.06)
-
-        ohlcv = binance.fetch_ohlcv(coin.symbol, '1h', limit=24)
-        noise_amps = [noise_amplitude(ohlcv[i:i+4]) for i in range(0, len(ohlcv), 4)]
-        weights = [.1, .1, .1, .2, .2, .3]
-        amplitude = sum(amp * weight for amp, weight in zip(noise_amps, weights))
-        recent_peak = max(candle[2] for candle in ohlcv[-4:])
-        coin.amplitude = amplitude / current_price
-        coin.gain_lt = coin.trend_lt * 4 / current_price
-        coin.gain_st = clamp(recent_peak - current_price, 0, amplitude*.85) / current_price
-        coin.gain = mix(coin.gain_lt, coin.gain_st, .85)
-
         times, prices = get_prices(coin.symbol, '5m', limit=8*12)
-        coin.trend = np.polyfit(times[-3*12:], prices[-3*12:], 1)[0] / current_price
-        coin.dy_dx = np.polyfit(times[-6:], prices[-6:], 1)[0] / current_price
-        coin.plots["recent"] = times, prices, dict(linestyle='-')
+        coin.plots["st actual"] = times, prices, dict(linestyle='-')
+        price = tickers[coin.symbol]['last']
+        coin.gain = (coin.expected_lt - price) / price
+        coin.trend = np.polyfit(times[-48:], prices[-48:], 1)[0] / price
+        coin.dy_dx = np.polyfit(times[ -6:], prices[ -6:], 1)[0] / price
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
-    print('\n'.join(f"{coin.name}: {percentage(coin.gain)} lt={percentage(coin.gain_lt)} st={percentage(coin.gain_st)} "
-                    f"amplitude={percentage(coin.amplitude)} dy/dx={percentage(coin.dy_dx)}/h" for coin in coins[:4]))
+    print('\n'.join(f"{coin.name}: {percentage(coin.gain)} dy/dx={percentage(coin.dy_dx)}/h" for coin in coins[:4]))
     return coins
 
 
@@ -336,7 +330,7 @@ if __name__ == "__main__":
                 holding = get_holding_coin()
                 from_coin = holding.name
                 result = None
-                coins = get_longterm_trend()
+                coins = get_coin_forecasts()
                 for i in range(16):
                     hodl  = next(c for c in coins if c.name == holding.name)
                     coins = get_best_coins(coins)
@@ -345,7 +339,9 @@ if __name__ == "__main__":
                     if trend > -.005:
                         best = coins[0]
                     else:
-                        best = next(c for c in coins if c.name == 'TUSD')
+                        btc  = next(c for c in coins if c.name == 'BTC')
+                        tusd = next(c for c in coins if c.name == 'TUSD')
+                        best = btc if btc.gain > tusd.gain else tusd
 
                     if best != hodl:
                         try:
@@ -365,7 +361,7 @@ if __name__ == "__main__":
                                     gain_factor = 1 + max(best.gain, .012)
                                     price  = round_price_up(best.symbol, filled_order['price'] * gain_factor)
                                     amount = binance.fetch_balance()[coin]['free']
-                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=60*6, poll=10)
+                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=60*8, poll=10)
                                 elapsed_time = time.time() - start_time
 
                                 times, prices = get_prices(best.symbol, '5m', limit=int(elapsed_time/60/5))
