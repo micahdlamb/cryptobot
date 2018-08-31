@@ -1,16 +1,7 @@
 """
-TODO
-Implement calculate_expected that takes a coin parameters and history. Long term time is based on length of list.
-Create test function to run code over history and create a plot of balance / time + text of holding coin at each point.
-Use hill search to find best parameters.
-
 Ideas to try:
-Look into how altcoin and BTC change relative to each other
-Show latest tickers in plot.  Show times of buys and sells.
-Always have a sell order going for alt coins
-Investigate multiple limit orders at once
-
-np.fft.fft to get frequency and amplitude
+Simulate cost function to evaluate how good...
+Tensor flow
 """
 
 import os, sys, time, math, collections, io, contextlib, traceback
@@ -62,7 +53,7 @@ def get_coin_forecasts():
             continue
 
         fit_days = [4, 8, 16]
-        fit_degs = [2, 2, 2]
+        fit_degs = [1, 1, 1]
         fit_times  = [times [-days*24:] for days in fit_days]
         fit_prices = [prices[-days*24:] for days in fit_days]
         fits = [np.polyfit(t, p, deg) for t,p,deg in zip(fit_times, fit_prices, fit_degs)]
