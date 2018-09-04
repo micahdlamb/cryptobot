@@ -88,13 +88,13 @@ def get_best_coins(coins):
         ask_volume = sum(max(0, unmix(ask_price * (1+bound), ask_price, price)) * volume for price, volume in book['asks'])
         bid_price = book['bids'][0][0]
         bid_volume = sum(max(0, unmix(bid_price * (1-bound), bid_price, price)) * volume for price, volume in book['bids'])
-        return bid_volume / (bid_volume + ask_volume) - .5
+        return (bid_volume / (bid_volume + ask_volume) - .5) * 2
 
     tickers = binance.fetch_tickers()
     for coin in coins:
         times, prices = get_prices(coin.symbol, '5m', limit=8*12)
         coin.plots["st actual"] = times, prices, dict(linestyle='-')
-        coin.ob = reduce_order_book(coin.symbol) * .25
+        coin.ob = reduce_order_book(coin.symbol) * .1
         price = tickers[coin.symbol]['last']
         tickSize = 10 ** -binance.markets[coin.symbol]['precision']['price']
         coin.lt = (coin.expected_lt - price - tickSize) / price
