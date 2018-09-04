@@ -30,7 +30,7 @@ unmix = lambda frm, to, value: (value - frm) / (to - frm)
 percentage = lambda value: f"{round(value*100, 2)}%"
 
 
-def symbols():
+def get_symbols():
     return ['BTC/USDT'] + [symbol for symbol, market in binance.markets.items()
                            if market['active'] and symbol.endswith('/BTC')]
 
@@ -47,7 +47,7 @@ def get_coin_forecasts():
     print('Forecasting coin prices...')
     class Coin(collections.namedtuple("Coin", "name symbol expected_lt")): pass
     coins = []
-    for symbol in symbols():
+    for symbol in get_symbols():
         times, prices = get_prices(symbol, '1h', limit=16*24)
         if len(times) < 8*24:
             print(f"Skipping {symbol} for missing data. len(ohlcv)={len(times)}")
@@ -81,18 +81,30 @@ def get_coin_forecasts():
 
 def get_best_coins(coins):
     print('Looking for best coins...')
+
+    def reduce_order_book(symbol, bound=.03):
+        book = binance.fetch_order_book(symbol)
+        ask_price = book['asks'][0][0]
+        ask_volume = sum(max(0, unmix(ask_price * (1+bound), ask_price, price)) * volume for price, volume in book['asks'])
+        bid_price = book['bids'][0][0]
+        bid_volume = sum(max(0, unmix(bid_price * (1-bound), bid_price, price)) * volume for price, volume in book['bids'])
+        return bid_volume / (bid_volume + ask_volume) - .5
+
     tickers = binance.fetch_tickers()
     for coin in coins:
         times, prices = get_prices(coin.symbol, '5m', limit=8*12)
         coin.plots["st actual"] = times, prices, dict(linestyle='-')
+        coin.ob = reduce_order_book(coin.symbol) * .25
         price = tickers[coin.symbol]['last']
         tickSize = 10 ** -binance.markets[coin.symbol]['precision']['price']
-        coin.gain = (coin.expected_lt - price - tickSize) / price
+        coin.lt = (coin.expected_lt - price - tickSize) / price
+        coin.gain = coin.lt + coin.ob
         coin.trend = np.polyfit(times[-48:], prices[-48:], 1)[0] / price
         coin.dy_dx = np.polyfit(times[ -6:], prices[ -6:], 1)[0] / price
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
-    print('\n'.join(f"{coin.name}: {percentage(coin.gain)} dy/dx={percentage(coin.dy_dx)}/h" for coin in coins[:4]))
+    print('\n'.join(f"{coin.name}: {percentage(coin.gain)} lt={percentage(coin.lt)} ob={percentage(coin.ob)} "
+                    f"dy/dx={percentage(coin.dy_dx)}/h" for coin in coins[:4]))
     return coins
 
 
@@ -354,7 +366,7 @@ if __name__ == "__main__":
                                     gain_factor = 1 + max(best.gain, .012)
                                     price  = round_price_up(best.symbol, filled_order['price'] * gain_factor)
                                     amount = binance.fetch_balance()[coin]['free']
-                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=60*8, poll=10)
+                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=60*4, poll=10)
                                 elapsed_time = time.time() - start_time
 
                                 times, prices = get_prices(best.symbol, '5m', limit=int(elapsed_time/60/5))
