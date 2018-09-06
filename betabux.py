@@ -98,8 +98,8 @@ def get_best_coins(coins):
         price = tickers[coin.symbol]['last']
         tickSize = 10 ** -binance.markets[coin.symbol]['precision']['price']
         coin.lt = (coin.expected_lt - price - tickSize) / price
-        coin.gain = coin.lt + coin.ob
-        coin.trend = np.polyfit(times[-48:], prices[-48:], 1)[0] / price
+        coin.gain = coin.ob#coin.lt + coin.ob
+        coin.trend = np.polyfit(times[-36:], prices[-36:], 1)[0] / price
         coin.dy_dx = np.polyfit(times[ -6:], prices[ -6:], 1)[0] / price
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
@@ -341,7 +341,7 @@ if __name__ == "__main__":
                     coins = get_best_coins(coins)
                     trend = np.average([coin.trend for coin in coins])
                     print(f'trend={percentage(trend)}/h')
-                    if trend > -.003:
+                    if True or trend > -.003:
                         best = coins[0]
                     else:
                         btc  = next(c for c in coins if c.name == 'BTC')
