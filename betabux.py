@@ -82,8 +82,8 @@ def get_coin_forecasts():
 def get_best_coins(coins):
     print('Looking for best coins...')
 
-    def reduce_order_book(symbol, bound=.03):
-        book = binance.fetch_order_book(symbol)
+    def reduce_order_book(symbol, bound=.06, limit=500):
+        book = binance.fetch_order_book(symbol, limit=limit)
         ask_price = book['asks'][0][0]
         ask_volume = sum(max(0, unmix(ask_price * (1+bound), ask_price, price)) * volume for price, volume in book['asks'])
         bid_price = book['bids'][0][0]
@@ -94,7 +94,7 @@ def get_best_coins(coins):
     for coin in coins:
         times, prices = get_prices(coin.symbol, '5m', limit=8*12)
         coin.plots["st actual"] = times, prices, dict(linestyle='-')
-        coin.ob = reduce_order_book(coin.symbol) * .1
+        coin.ob = reduce_order_book(coin.symbol) * .15
         price = tickers[coin.symbol]['last']
         tickSize = 10 ** -binance.markets[coin.symbol]['precision']['price']
         coin.lt = (coin.expected_lt - price - tickSize) / price
@@ -219,10 +219,10 @@ def trade_coin(from_coin, to_coin, plots=None, max_change=.03, max_wait_minutes=
 
         holding_amount = binance.fetch_balance()[from_coin]['free']
         if side == 'buy':
-            price  = round_price_down(symbol, min(price, current_price*1.003))
+            price  = round_price_down(symbol, min(price, current_price*1.002))
             amount = binance.amount_to_lots(symbol, holding_amount / price)
         else:
-            price  = round_price_up(symbol, max(price, current_price*.997))
+            price  = round_price_up(symbol, max(price, current_price*.998))
             amount = holding_amount
 
         difference = (price - current_price) / current_price
@@ -341,7 +341,7 @@ if __name__ == "__main__":
                     coins = get_best_coins(coins)
                     trend = np.average([coin.trend for coin in coins])
                     print(f'trend={percentage(trend)}/h')
-                    if trend > -.005:
+                    if trend > -.003:
                         best = coins[0]
                     else:
                         btc  = next(c for c in coins if c.name == 'BTC')
@@ -369,7 +369,7 @@ if __name__ == "__main__":
                                     create_order_and_wait(best.symbol, 'sell', amount, price, timeout=60*4, poll=10)
                                 elapsed_time = time.time() - start_time
 
-                                times, prices = get_prices(best.symbol, '5m', limit=int(elapsed_time/60/5))
+                                times, prices = get_prices(best.symbol, '5m', limit=math.ceil(elapsed_time/60/5))
                                 plots['holding'] = times, prices, dict(linestyle='-')
 
                         except TimeoutError as error:
