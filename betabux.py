@@ -2,7 +2,6 @@
 Ideas to try:
 Simulate cost function to evaluate how good...
 Tensor flow
-Look at order book
 """
 
 import os, sys, time, math, collections, io, contextlib, traceback
@@ -63,11 +62,11 @@ def get_coin_forecasts():
 
         plot_times, plot_prices = times[-16:], prices[-16:]
         plots = {"lt actual": (plot_times, plot_prices, dict(linestyle='-', marker='o'))}
-        for days, fit in zip(fit_days, fits):
-            times = plot_times[-days*24:]
-            fit_times  = np.linspace(times[0], times[-1], len(times) * 2)
-            fit_prices = [np.polyval(fit, time) for time in fit_times]
-            plots[f"{days} day fit"] = (fit_times, fit_prices, dict(linestyle='--'))
+        #for days, fit in zip(fit_days, fits):
+        #    times = plot_times[-days*24:]
+        #    fit_times  = np.linspace(times[0], times[-1], len(times) * 2)
+        #    fit_prices = [np.polyval(fit, time) for time in fit_times]
+        #    plots[f"{days} day fit"] = (fit_times, fit_prices, dict(linestyle='--'))
 
 
         name = symbol.split('/')[0]
@@ -82,7 +81,7 @@ def get_coin_forecasts():
 def get_best_coins(coins):
     print('Looking for best coins...')
 
-    def reduce_order_book(symbol, bound=.06, limit=500):
+    def reduce_order_book(symbol, bound=.04, limit=500):
         book = binance.fetch_order_book(symbol, limit=limit)
         ask_price = book['asks'][0][0]
         ask_volume = sum(max(0, unmix(ask_price * (1+bound), ask_price, price)) * volume for price, volume in book['asks'])
@@ -94,17 +93,18 @@ def get_best_coins(coins):
     for coin in coins:
         times, prices = get_prices(coin.symbol, '5m', limit=8*12)
         coin.plots["st actual"] = times, prices, dict(linestyle='-')
-        coin.ob = reduce_order_book(coin.symbol) * .15
         price = tickers[coin.symbol]['last']
-        tickSize = 10 ** -binance.markets[coin.symbol]['precision']['price']
-        coin.lt = (coin.expected_lt - price - tickSize) / price
-        coin.gain = coin.ob#coin.lt + coin.ob
         coin.trend = np.polyfit(times[-36:], prices[-36:], 1)[0] / price
         coin.dy_dx = np.polyfit(times[ -6:], prices[ -6:], 1)[0] / price
+        coin.delta = (prices[-1] - prices[-12]) / price
+        tickSize = 10 ** -binance.markets[coin.symbol]['precision']['price']
+        coin.lt = (coin.expected_lt - price - tickSize) / price
+        coin.ob = reduce_order_book(coin.symbol) * .12
+        coin.gain = coin.ob + clamp(coin.delta, -.03, .03)
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
-    print('\n'.join(f"{coin.name}: {percentage(coin.gain)} lt={percentage(coin.lt)} ob={percentage(coin.ob)} "
-                    f"dy/dx={percentage(coin.dy_dx)}/h" for coin in coins[:4]))
+    print('\n'.join(f"{coin.name}: {percentage(coin.gain)} ob={percentage(coin.ob)} delta={percentage(coin.delta)} "
+                    f"lt={percentage(coin.lt)} dy/dx={percentage(coin.dy_dx)}/h" for coin in coins[:4]))
     return coins
 
 
@@ -156,7 +156,7 @@ def round_price_down(symbol, price):
 
 trade_log = []
 
-def trade_coin(from_coin, to_coin, plots=None, max_change=.03, max_wait_minutes=90):
+def trade_coin(from_coin, to_coin, plots=None, max_change=.02, max_wait_minutes=90):
     assert from_coin != to_coin, to_coin
     print(f"Transferring {from_coin} to {to_coin}...")
 
@@ -177,52 +177,21 @@ def trade_coin(from_coin, to_coin, plots=None, max_change=.03, max_wait_minutes=
         if (time.time() - start_time)/60 > max_wait_minutes:
             raise TimeoutError(f"{side} of {symbol} didn't get filled")
 
-        # Ride any spikes
-        times, prices = get_prices(symbol, '1m', limit=15)
-        fit = np.polyfit(times, prices, 1)
-        good_rate = fit[0] * good_direction
-        if good_rate > 0:
-            print('Wait while price moves in good direction...')
-            time.sleep(10*60)
-            continue
-
         ticker = binance.fetch_ticker(symbol)
-        now = ticker['timestamp'] / milli_seconds_in_minute
         current_price = ticker['last']
         good_change   = good_direction * (current_price - start_price) / start_price
         if good_change < -max_change:
             raise TimeoutError(f"{side} of {symbol} aborted due to price change of {percentage(abs(good_change))}")
 
-        ohlcv = binance.fetch_ohlcv(symbol, '15m', limit=4)
-        times = [candle[0]/milli_seconds_in_minute for candle in ohlcv] + [now]
-        prices = [np.average(candle[2:4]) for candle in ohlcv] + [current_price]
-        fit = np.polyfit(times, prices, 1)
-        good_rate = fit[0] * good_direction
-        amplitude = (sum(candle[2]-candle[3] for candle in ohlcv) - abs(fit[0]*15*4)) / len(ohlcv)
-        assert amplitude >= 0, amplitude
-        print(f"good rate {percentage(good_rate*60/current_price)}/h amplitude {percentage(amplitude/current_price)}")
-
-        if plots:
-            times_in_hours = [t/60+1/8 for t in times]
-            plots['trade actual'] = times_in_hours, prices, dict(linestyle='-')
-            plots['trade fit']    = times_in_hours, [np.polyval(fit, t) for t in times], dict(linestyle='--')
-
-        time_since_fit = now - times[-1]
-        if not (0 <= time_since_fit <= 15):
-            assert 0 <= time_since_fit <= 30, time_since_fit
-            print(f"Warning: ticker time is {time_since_fit} minutes after ohlcv time")
-
-        if good_rate > 0:
-            price = np.polyval(fit, now + 20) + good_direction * amplitude/3
-        else:
-            price = np.polyval(fit, now + 10) + good_direction * amplitude/3
-
         holding_amount = binance.fetch_balance()[from_coin]['free']
+        times, prices = get_prices(symbol, '1m', limit=5)
+        price = current_price + np.polyfit(times, prices, 1)[0] * 2/60
+
         if side == 'buy':
-            price  = round_price_down(symbol, min(price, current_price*1.002))
+            price  = round_price_down(symbol, min(price, current_price*1.001))
             amount = binance.amount_to_lots(symbol, holding_amount / price)
         else:
-            price  = round_price_up(symbol, max(price, current_price*.998))
+            price  = round_price_up(symbol, max(price, current_price*.999))
             amount = holding_amount
 
         difference = (price - current_price) / current_price
@@ -239,7 +208,7 @@ def trade_coin(from_coin, to_coin, plots=None, max_change=.03, max_wait_minutes=
             time.sleep(5*60)
 
 
-def create_order_and_wait(symbol, side, amount, price, type='limit', timeout=30, poll=3):
+def create_order_and_wait(symbol, side, amount, price, type='limit', timeout=15, poll=3):
     order = binance.create_order(symbol, type, side, amount, price)
     del order['info']
     print(order)
@@ -264,6 +233,7 @@ def email_myself_plots(subject, coins, log):
     msg = EmailMessage()
 
     balance = get_balance()
+    total_gain = f"₿{percentage((balance.btc - start_balance.btc) / start_balance.btc)}"
     balance = f"₿{round(balance.btc, 5)} ${round(balance.usdt)}"
 
     msg['Subject'] = subject+balance
@@ -297,7 +267,7 @@ def email_myself_plots(subject, coins, log):
         bufs.append((cid, buf))
         imgs += f"<img src='cid:{cid[1:-1]}'>"
 
-    msg.add_alternative(f"<html><body>{trades}<hr>{imgs}<hr><pre>{log}</pre></body></html>", subtype='html')
+    msg.add_alternative(f"<html><body>{total_gain}<br>{trades}<hr>{imgs}<hr><pre>{log}</pre></body></html>", subtype='html')
     for cid, buf in bufs:
         msg.get_payload()[1].add_related(buf.read(), "image", "png", cid=cid)
 
@@ -325,6 +295,8 @@ class Tee:
             file.flush()
 
 if __name__ == "__main__":
+    start_balance = get_balance()
+
     while True:
         start_time = time.time()
         try:
@@ -366,7 +338,7 @@ if __name__ == "__main__":
                                     gain_factor = 1 + max(best.gain, .012)
                                     price  = round_price_up(best.symbol, filled_order['price'] * gain_factor)
                                     amount = binance.fetch_balance()[coin]['free']
-                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=60*4, poll=10)
+                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=60*2, poll=10)
                                 elapsed_time = time.time() - start_time
 
                                 times, prices = get_prices(best.symbol, '5m', limit=math.ceil(elapsed_time/60/5))
