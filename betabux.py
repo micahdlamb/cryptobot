@@ -94,13 +94,15 @@ def get_best_coins(coins):
         times, prices = get_prices(coin.symbol, '5m', limit=8*12)
         coin.plots["st actual"] = times, prices, dict(linestyle='-')
         price = tickers[coin.symbol]['last']
-        coin.trend = np.polyfit(times[-36:], prices[-36:], 1)[0] / price
-        coin.dy_dx = np.polyfit(times[ -6:], prices[ -6:], 1)[0] / price
-        coin.delta = (prices[-1] - prices[-12]) / price
         tickSize = 10 ** -binance.markets[coin.symbol]['precision']['price']
         coin.lt = (coin.expected_lt - price - tickSize) / price
-        coin.ob = reduce_order_book(coin.symbol) * .12
-        coin.gain = coin.ob + clamp(coin.delta, -.03, .03)
+        coin.trend = np.polyfit(times[-36:], prices[-36:], 1)[0] / price
+        coin.dy_dx = np.polyfit(times[ -6:], prices[ -6:], 1)[0] / price
+
+        low, high = min(prices[-12:]), max(prices[-12:])
+        coin.delta = (price*2 - high - low) / price
+        coin.ob = reduce_order_book(coin.symbol) * .08
+        coin.gain = coin.ob + clamp(coin.delta, -.02, .02)
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
     print('\n'.join(f"{coin.name}: {percentage(coin.gain)} ob={percentage(coin.ob)} delta={percentage(coin.delta)} "
