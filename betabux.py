@@ -67,7 +67,7 @@ def get_best_coins(coins, hodl):
     def reduce_order_book(symbol, bound=.04, limit=500):
         book = binance.fetch_order_book(symbol, limit=limit)
         ask_range = (book['asks'][-1][0] - book['asks'][0][0]) / book['asks'][0][0]
-        if ask_range < bound:
+        if symbol != 'BTC/USDT' and ask_range < bound:
             print(f"WARNING {symbol} ask range {round(ask_range, 3)} < {bound}")
         ask_price = book['asks'][0][0]
         ask_bound = ask_price * (1+bound)
@@ -75,7 +75,9 @@ def get_best_coins(coins, hodl):
         bid_price = book['bids'][0][0]
         bid_bound = bid_price * (1-bound)
         bid_volume = sum(max(0, unmix(price, bid_bound, bid_price)) * volume * price for price, volume in book['bids'])
-        return (bid_volume / (bid_volume + ask_volume) - .5) * 2, bid_volume + ask_volume
+        volume = bid_volume + ask_volume
+        spread = (ask_price - bid_price) / bid_price
+        return (bid_volume / volume - .5) * 2, volume, spread
 
     tickers = binance.fetch_tickers()
     for coin in coins:
@@ -89,15 +91,14 @@ def get_best_coins(coins, hodl):
         low, high = min(prices[-12:]), max(prices[-12:])
         tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price']
         coin.delta = (price*2 - high - low - tick_size) / price
-        coin.ob, coin.vol = reduce_order_book(coin.symbol)
-        vol_preference = (min(1, unmix(coin.vol, 0, 50)) - .5) * 2
-        punish_tick_size = -tick_size / price
-        hodl_preference = 1 if coin == hodl else 0
-        coin.gain = coin.ob*.08 + clamp(coin.delta, -.02, .02) + vol_preference*.02 + punish_tick_size + hodl_preference*.01
+        coin.ob, coin.vol, coin.spread = reduce_order_book(coin.symbol)
+        vol_pref = (min(1, unmix(coin.vol, 0, 50)) - .5) * 2
+        hodl_pref = 1 if coin == hodl else 0
+        coin.gain = coin.ob*.08 + clamp(coin.delta, -.02, .02) - coin.spread*4 + vol_pref*.01 + hodl_pref*.01
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
-    print('\n'.join(f"{coin.name}: {percentage(coin.gain)} ob={round(coin.ob, 2)} delta={percentage(coin.delta)} "
-                    f"vol={round(coin.vol)} dy/dx={percentage(coin.dy_dx)}/h" for coin in coins[:4]))
+    print('\n'.join(f"{coin.name}: {percentage(coin.gain)} ob={round(coin.ob, 2)} <->={percentage(coin.spread)} "
+                    f"Δ={percentage(coin.delta)} vol={round(coin.vol)} y'={percentage(coin.dy_dx)}/h" for coin in coins[:4]))
     return coins
 
 
@@ -177,8 +178,8 @@ def trade_coin(from_coin, to_coin, start_price, max_change=.01, max_wait_minutes
             raise TimeoutError(f"{side} of {symbol} aborted due to price change of {percentage(bad_change)}")
 
         holding_amount = binance.fetch_balance()[from_coin]['free']
-        times, prices = get_prices(symbol, '1m', limit=15)
-        price = current_price + np.polyfit(times, prices, 1)[0] * 5/60
+        times, prices = get_prices(symbol, '1m', limit=10)
+        price = current_price + np.polyfit(times, prices, 1)[0] * 3/60
 
         if side == 'buy':
             price  = round_price_down(symbol, min(price, current_price*1.002))
