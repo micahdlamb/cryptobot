@@ -94,7 +94,7 @@ def get_best_coins(coins, hodl):
         coin.ob, coin.vol, coin.spread = reduce_order_book(coin.symbol)
         vol_pref = (min(1, unmix(coin.vol, 0, 50)) - .5) * 2
         hodl_pref = 1 if coin == hodl else 0
-        coin.gain = coin.ob*.08 + clamp(coin.delta, -.02, .02) - coin.spread*4 + vol_pref*.01 + hodl_pref*.01
+        coin.gain = coin.ob*.08 + clamp(coin.delta, -.02, .02) - coin.spread*4 + vol_pref*.01 + hodl_pref*.02
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
     print('\n'.join(f"{coin.name}: {percentage(coin.gain)} ob={round(coin.ob, 2)} <->={percentage(coin.spread)} "
@@ -298,6 +298,15 @@ if __name__ == "__main__":
                 coins = get_coin_forecasts()
                 for i in range(12*4):
                     hodl  = next(c for c in coins if c.name == holding.name)
+
+                    if hodl.name != 'BTC':
+                        times, prices = get_prices(hodl.symbol, '1m', limit=15)
+                        slope = np.polyfit(times, prices, 1)[0] / prices[-1]
+                        if slope > 0:
+                            print(f'Wait while {hodl.name} price increases at {percentage(slope)}/h')
+                            time.sleep(10*60)
+                            continue
+
                     coins = get_best_coins(coins, hodl)
                     trend = np.average([coin.trend for coin in coins])
                     print(f'trend={percentage(trend)}/h')
@@ -322,12 +331,12 @@ if __name__ == "__main__":
                             if coin == best.name:
                                 start_time = time.time()
                                 if coin == "BTC":
-                                    time.sleep(60*2)
+                                    time.sleep(60)
                                 else:
                                     gain_factor = 1 + max(best.gain, .012)
                                     price  = round_price_up(best.symbol, filled_order['price'] * gain_factor)
                                     amount = binance.fetch_balance()[coin]['free']
-                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=15, poll=5)
+                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=30, poll=5)
                                 elapsed_time = time.time() - start_time
 
                                 times, prices = get_prices(best.symbol, '5m', limit=math.ceil(elapsed_time/60/5))
@@ -363,8 +372,8 @@ if __name__ == "__main__":
             email_myself(msg)
 
         # Not really needed but just in case...
-        loop_hours = (time.time() - start_time) / 3600
-        if loop_hours < 1:
-            time.sleep(3600*(1 - loop_hours))
+        loop_minutes = (time.time() - start_time) / 60
+        if loop_minutes < 30:
+            time.sleep(60*(30 - loop_minutes))
 
         print('-'*30 + '\n')
