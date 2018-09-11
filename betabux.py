@@ -86,15 +86,15 @@ def get_best_coins(coins, hodl):
         price = tickers[coin.symbol]['last']
         coin.price = price
         coin.trend = np.polyfit(times[-36:], prices[-36:], 1)[0] / price
-        coin.dy_dx = np.polyfit(times[ -6:], prices[ -6:], 1)[0] / price
+        coin.dy_dx = np.polyfit(times[ -3:], prices[ -3:], 1)[0] / price
 
-        low, high = min(prices[-12:]), max(prices[-12:])
+        low, high = min(prices[-6:]), max(prices[-6:])
         tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price']
         coin.delta = (price*2 - high - low - tick_size) / price
         coin.ob, coin.vol, coin.spread = reduce_order_book(coin.symbol)
         vol_pref = (min(1, unmix(coin.vol, 0, 50)) - .5) * 2
-        hodl_pref = 1 if coin == hodl else 0
-        coin.gain = coin.ob*.08 + clamp(coin.delta, -.02, .02) - coin.spread*4 + vol_pref*.01 + hodl_pref*.02
+        not_hodl = 1 if coin == hodl else 0
+        coin.gain = coin.ob*.1 + clamp(coin.delta*2, -.04, .04) - coin.spread*not_hodl*5 + vol_pref*.01
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
     print('\n'.join(f"{coin.name}: {percentage(coin.gain)} ob={round(coin.ob, 2)} <->={percentage(coin.spread)} "
