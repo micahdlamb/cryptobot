@@ -98,7 +98,7 @@ def get_best_coins(coins, hodl):
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
     print('\n'.join(f"{coin.name}: {percentage(coin.gain)} ob={round(coin.ob, 2)} <->={percentage(coin.spread)} "
-                    f"Δ={percentage(coin.delta)} vol={round(coin.vol)} y'={percentage(coin.dy_dx)}/h" for coin in coins[:4]))
+                    f"Δ={percentage(coin.delta)} y'={percentage(coin.dy_dx)}/h" for coin in coins[:4]))
     return coins
 
 
@@ -151,7 +151,7 @@ def round_price_down(symbol, price):
 trade_log = []
 
 
-def trade_coin(from_coin, to_coin, start_price, max_change=.01, max_wait_minutes=60):
+def trade_coin(from_coin, to_coin, start_price, max_change=.01, max_wait_minutes=5):
     assert from_coin != to_coin, to_coin
     print(f"Transferring {from_coin} to {to_coin}...")
 
@@ -171,8 +171,8 @@ def trade_coin(from_coin, to_coin, start_price, max_change=.01, max_wait_minutes
         if (time.time() - start_time)/60 > max_wait_minutes:
             raise TimeoutError(f"{side} of {symbol} didn't get filled")
 
-        ticker = binance.fetch_ticker(symbol)
-        current_price = ticker['last']
+        book = binance.fetch_order_book(symbol, limit=5)
+        current_price = book['bids' if side == 'buy' else 'asks'][0][0]
         bad_change   = -good_direction * (current_price - start_price) / start_price
         if bad_change > max_change:
             raise TimeoutError(f"{side} of {symbol} aborted due to price change of {percentage(bad_change)}")
@@ -196,7 +196,7 @@ def trade_coin(from_coin, to_coin, start_price, max_change=.01, max_wait_minutes
             return filled_order
 
 
-def create_order_and_wait(symbol, side, amount, price, type='limit', timeout=5, poll=1):
+def create_order_and_wait(symbol, side, amount, price, type='limit', timeout=6, poll=1):
     order = binance.create_order(symbol, type, side, amount, price)
     del order['info']
     print(order)
@@ -306,6 +306,8 @@ if __name__ == "__main__":
                             print(f'Wait while {hodl.name} price increases at {percentage(slope)}/h')
                             time.sleep(10*60)
                             continue
+                        else:
+                            print(f'Losing {hodl.name} at {percentage(slope)}/h')
 
                     coins = get_best_coins(coins, hodl)
                     trend = np.average([coin.trend for coin in coins])
@@ -345,7 +347,7 @@ if __name__ == "__main__":
                         except TimeoutError as error:
                             result += '...timed out'
                             print(error)
-                            #continue uncomment eventually
+                            continue
 
                         except:
                             result += '...errored'
