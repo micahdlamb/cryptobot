@@ -86,7 +86,7 @@ def get_best_coins(coins, hodl):
         tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price']
         coin.delta = (coin.price*2 - high - low - tick_size) / coin.price
         hodl_pref = 1 if coin == hodl else 0
-        coin.gain = coin.ob*(.1 + .04*min(1, unmix(coin.vol, 0, 25))) + clamp(coin.delta*3, -.03, .03) + hodl_pref*.02
+        coin.gain = coin.ob*(.04 + .04*min(1, unmix(coin.vol, 0, 15))) + clamp(coin.delta*2, -.02, .02) + hodl_pref*.02
 
         coin.plots["st actual"] = times, prices, dict(linestyle='-')
         coin.trend = np.polyfit(times[-36:], prices[-36:], 1)[0] / coin.price
