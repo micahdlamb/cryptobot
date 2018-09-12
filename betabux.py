@@ -64,7 +64,7 @@ def get_coin_forecasts():
 def get_best_coins(coins, hodl):
     print('Looking for best coins...')
 
-    def reduce_order_book(symbol, bound=.04, limit=500):
+    def reduce_order_book(symbol, bound=.03, limit=500):
         book = binance.fetch_order_book(symbol, limit=limit)
         ask_range = (book['asks'][-1][0] - book['asks'][0][0]) / book['asks'][0][0]
         if symbol != 'BTC/USDT' and ask_range < bound:
@@ -77,28 +77,24 @@ def get_best_coins(coins, hodl):
         bid_volume = sum(max(0, unmix(price, bid_bound, bid_price)) * volume * price for price, volume in book['bids'])
         volume = bid_volume + ask_volume
         spread = (ask_price - bid_price) / bid_price
-        return (bid_volume / volume - .5) * 2, volume, spread
+        return (bid_volume / volume - .5) * 2, bid_volume, np.average([bid_price, ask_price]), spread
 
-    tickers = binance.fetch_tickers()
     for coin in coins:
         times, prices = get_prices(coin.symbol, '5m', limit=8*12)
-        coin.plots["st actual"] = times, prices, dict(linestyle='-')
-        price = tickers[coin.symbol]['last']
-        coin.price = price
-        coin.trend = np.polyfit(times[-36:], prices[-36:], 1)[0] / price
-        coin.dy_dx = np.polyfit(times[ -3:], prices[ -3:], 1)[0] / price
-
         low, high = min(prices[-6:]), max(prices[-6:])
+        coin.ob, coin.vol, coin.price, coin.spread = reduce_order_book(coin.symbol)
         tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price']
-        coin.delta = (price*2 - high - low - tick_size) / price
-        coin.ob, coin.vol, coin.spread = reduce_order_book(coin.symbol)
-        vol_pref = (min(1, unmix(coin.vol, 0, 50)) - .5) * 2
-        not_hodl = 1 if coin == hodl else 0
-        coin.gain = coin.ob*.1 + clamp(coin.delta*2, -.04, .04) - coin.spread*not_hodl*5 + vol_pref*.01
+        coin.delta = (coin.price*2 - high - low - tick_size) / coin.price
+        hodl_pref = 1 if coin == hodl else 0
+        coin.gain = coin.ob*(.1 + .04*min(1, unmix(coin.vol, 0, 25))) + clamp(coin.delta*4, -.04, .04) + hodl_pref*.01
+
+        coin.plots["st actual"] = times, prices, dict(linestyle='-')
+        coin.trend = np.polyfit(times[-36:], prices[-36:], 1)[0] / coin.price
+        coin.dy_dx = np.polyfit(times[ -3:], prices[ -3:], 1)[0] / coin.price
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
     print('\n'.join(f"{coin.name}: {percentage(coin.gain)} ob={round(coin.ob, 2)} <->={percentage(coin.spread)} "
-                    f"Δ={percentage(coin.delta)} y'={percentage(coin.dy_dx)}/h" for coin in coins[:4]))
+                    f"Δ={percentage(coin.delta)} vol={round(coin.vol)} y'={percentage(coin.dy_dx)}/h" for coin in coins[:4]))
     return coins
 
 
@@ -172,24 +168,22 @@ def trade_coin(from_coin, to_coin, start_price, max_change=.01, max_wait_minutes
             raise TimeoutError(f"{side} of {symbol} didn't get filled")
 
         book = binance.fetch_order_book(symbol, limit=5)
-        current_price = book['bids' if side == 'buy' else 'asks'][0][0]
-        bad_change   = -good_direction * (current_price - start_price) / start_price
+        bid_price = book['bids'][0][0]
+        ask_price = book['asks'][0][0]
+        avg_price = np.average([bid_price, ask_price])
+        bad_change   = -good_direction * (avg_price - start_price) / start_price
         if bad_change > max_change:
             raise TimeoutError(f"{side} of {symbol} aborted due to price change of {percentage(bad_change)}")
 
         holding_amount = binance.fetch_balance()[from_coin]['free']
-        times, prices = get_prices(symbol, '1m', limit=10)
-        price = current_price + np.polyfit(times, prices, 1)[0] * 3/60
-
         if side == 'buy':
-            price  = round_price_down(symbol, min(price, current_price*1.002))
+            price  = round_price_down(symbol, mix(bid_price, ask_price, .15))
             amount = binance.amount_to_lots(symbol, holding_amount / price)
         else:
-            price  = round_price_up(symbol, max(price, current_price*.998))
+            price  = round_price_up  (symbol, mix(ask_price, bid_price, .15))
             amount = holding_amount
 
-        difference = (price - current_price) / current_price
-        print(f"{side} {amount} {symbol} at {price} ({percentage(difference)})")
+        print(f"{side} {amount} {symbol} at {price}")
 
         filled_order = create_order_and_wait(symbol, side, amount, price)
         if filled_order:
