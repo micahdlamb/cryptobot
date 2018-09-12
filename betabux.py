@@ -86,7 +86,7 @@ def get_best_coins(coins, hodl):
         tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price']
         coin.delta = (coin.price*2 - high - low - tick_size) / coin.price
         hodl_pref = 1 if coin == hodl else 0
-        coin.gain = coin.ob*(.1 + .04*min(1, unmix(coin.vol, 0, 25))) + clamp(coin.delta*4, -.04, .04) + hodl_pref*.01
+        coin.gain = coin.ob*(.1 + .04*min(1, unmix(coin.vol, 0, 25))) + clamp(coin.delta*3, -.03, .03) + hodl_pref*.02
 
         coin.plots["st actual"] = times, prices, dict(linestyle='-')
         coin.trend = np.polyfit(times[-36:], prices[-36:], 1)[0] / coin.price
@@ -147,7 +147,7 @@ def round_price_down(symbol, price):
 trade_log = []
 
 
-def trade_coin(from_coin, to_coin, start_price, max_change=.01, max_wait_minutes=5):
+def trade_coin(from_coin, to_coin, start_price, max_change=.01, max_wait_minutes=6):
     assert from_coin != to_coin, to_coin
     print(f"Transferring {from_coin} to {to_coin}...")
 
@@ -177,10 +177,10 @@ def trade_coin(from_coin, to_coin, start_price, max_change=.01, max_wait_minutes
 
         holding_amount = binance.fetch_balance()[from_coin]['free']
         if side == 'buy':
-            price  = round_price_down(symbol, mix(bid_price, ask_price, .15))
+            price  = round_price_down(symbol, mix(bid_price, ask_price, .2))
             amount = binance.amount_to_lots(symbol, holding_amount / price)
         else:
-            price  = round_price_up  (symbol, mix(ask_price, bid_price, .15))
+            price  = round_price_up  (symbol, mix(ask_price, bid_price, .2))
             amount = holding_amount
 
         print(f"{side} {amount} {symbol} at {price}")
@@ -190,7 +190,7 @@ def trade_coin(from_coin, to_coin, start_price, max_change=.01, max_wait_minutes
             return filled_order
 
 
-def create_order_and_wait(symbol, side, amount, price, type='limit', timeout=6, poll=1):
+def create_order_and_wait(symbol, side, amount, price, type='limit', timeout=5, poll=1):
     order = binance.create_order(symbol, type, side, amount, price)
     del order['info']
     print(order)
