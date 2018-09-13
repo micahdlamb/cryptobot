@@ -86,15 +86,19 @@ def get_best_coins(coins, hodl):
         tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price']
         coin.delta = (coin.price*2 - high - low - tick_size) / coin.price
         hodl_pref = 1 if coin == hodl else 0
-        coin.gain = coin.ob*(.04 + .04*min(1, unmix(coin.vol, 0, 15))) + clamp(coin.delta*2, -.02, .02) + hodl_pref*.02
+        coin.gain = coin.ob*math.sqrt(min(64, coin.vol))*.01 + clamp(coin.delta*2, -.02, .02) + hodl_pref*.02
 
         coin.plots["st actual"] = times, prices, dict(linestyle='-')
         coin.trend = np.polyfit(times[-36:], prices[-36:], 1)[0] / coin.price
         coin.dy_dx = np.polyfit(times[ -3:], prices[ -3:], 1)[0] / coin.price
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
-    print('\n'.join(f"{coin.name}: {percentage(coin.gain)} ob={round(coin.ob, 2)} <->={percentage(coin.spread)} "
-                    f"Δ={percentage(coin.delta)} vol={round(coin.vol)} y'={percentage(coin.dy_dx)}/h" for coin in coins[:4]))
+    vals = lambda coin: ("*" if coin == hodl else " ")+\
+                        f"{coin.name}: {percentage(coin.gain)} ob={round(coin.ob, 2)} vol={round(coin.vol)} "\
+                        f"Δ={percentage(coin.delta)} y'={percentage(coin.dy_dx)}/h"
+    best = coins[:4]
+    if hodl not in best: best.append(hodl)
+    print('\n'.join(vals(coin) for coin in best))
     return coins
 
 
@@ -147,7 +151,7 @@ def round_price_down(symbol, price):
 trade_log = []
 
 
-def trade_coin(from_coin, to_coin, start_price, max_change=.01, max_wait_minutes=6):
+def trade_coin(from_coin, to_coin, start_price, max_change=.01):
     assert from_coin != to_coin, to_coin
     print(f"Transferring {from_coin} to {to_coin}...")
 
@@ -161,33 +165,37 @@ def trade_coin(from_coin, to_coin, start_price, max_change=.01, max_wait_minutes
         symbol = f"{from_coin}/{to_coin}"
         good_direction = 1
 
-    start_time  = time.time()
-
-    while True:
-        if (time.time() - start_time)/60 > max_wait_minutes:
-            raise TimeoutError(f"{side} of {symbol} didn't get filled")
-
+    for i in range(3):
         book = binance.fetch_order_book(symbol, limit=5)
         bid_price = book['bids'][0][0]
         ask_price = book['asks'][0][0]
         avg_price = np.average([bid_price, ask_price])
+
         bad_change   = -good_direction * (avg_price - start_price) / start_price
         if bad_change > max_change:
             raise TimeoutError(f"{side} of {symbol} aborted due to price change of {percentage(bad_change)}")
 
         holding_amount = binance.fetch_balance()[from_coin]['free']
+        times, prices = get_prices(hodl.symbol, '1m', limit=15)
+        rate = np.polyfit(times, prices, 1)[0]
+
         if side == 'buy':
-            price  = round_price_down(symbol, mix(bid_price, ask_price, .2))
+            price  = round_price_down(symbol, min(ask_price, bid_price + rate/12))
             amount = binance.amount_to_lots(symbol, holding_amount / price)
         else:
-            price  = round_price_up  (symbol, mix(ask_price, bid_price, .2))
+            price  = round_price_up  (symbol, max(bid_price, ask_price + rate/12))
             amount = holding_amount
 
-        print(f"{side} {amount} {symbol} at {price}")
+        m1x    = unmix(price, bid_price, ask_price)
+        spread = (ask_price - bid_price) / avg_price
+        rate   = rate / avg_price
+        print(f"{side} {amount} {symbol} at {price} mix={round(m1x, 1)} <->={percentage(spread)} y'={percentage(rate)}/h")
 
         filled_order = create_order_and_wait(symbol, side, amount, price)
         if filled_order:
             return filled_order
+
+    raise TimeoutError(f"{side} of {symbol} didn't get filled")
 
 
 def create_order_and_wait(symbol, side, amount, price, type='limit', timeout=5, poll=1):
@@ -295,13 +303,13 @@ if __name__ == "__main__":
 
                     if hodl.name != 'BTC':
                         times, prices = get_prices(hodl.symbol, '1m', limit=15)
-                        slope = np.polyfit(times, prices, 1)[0] / prices[-1]
-                        if slope > 0:
-                            print(f'Wait while {hodl.name} price increases at {percentage(slope)}/h')
+                        rate = np.polyfit(times, prices, 1)[0] / prices[-1]
+                        if rate > 0:
+                            print(f'Wait while {hodl.name} price increases at {percentage(rate)}/h')
                             time.sleep(10*60)
                             continue
                         else:
-                            print(f'Losing {hodl.name} at {percentage(slope)}/h')
+                            print(f'Losing {hodl.name} at {percentage(rate)}/h')
 
                     coins = get_best_coins(coins, hodl)
                     trend = np.average([coin.trend for coin in coins])
