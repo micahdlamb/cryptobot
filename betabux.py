@@ -176,7 +176,7 @@ def trade_coin(from_coin, to_coin, start_price, max_change=.01):
             raise TimeoutError(f"{side} of {symbol} aborted due to price change of {percentage(bad_change)}")
 
         holding_amount = binance.fetch_balance()[from_coin]['free']
-        times, prices = get_prices(hodl.symbol, '1m', limit=15)
+        times, prices = get_prices(symbol, '1m', limit=15)
         rate = np.polyfit(times, prices, 1)[0]
 
         if side == 'buy':
