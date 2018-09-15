@@ -83,16 +83,15 @@ def get_best_coins(coins, hodl):
     for coin in coins:
         coin.ob, coin.vol, coin.price, coin.spread = reduce_order_book(coin.symbol)
 
-        times, prices = get_prices(coin.symbol, '1m', limit=15)
+        times, prices = get_prices(coin.symbol, '5m', limit=8*12)
+        low, high = min(prices[-6:]), max(prices[-6:])
         tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price']
-        low, high = min(prices), max(prices)
         coin.delta = (coin.price*2 - high - low - tick_size) / coin.price
 
-        vol_weight = math.pow(min(27, coin.vol), 1/3)*.01
+        vol_weight = math.pow(min(36, coin.vol), 1/2)*.01
         hodl_pref = .01 if coin == hodl else 0
         coin.gain = coin.ob*vol_weight + clamp(coin.delta, -vol_weight, vol_weight) + hodl_pref
 
-        times, prices = get_prices(coin.symbol, '5m', limit=8 * 12)
         coin.plots["st actual"] = times, prices, dict(linestyle='-')
         coin.trend = np.polyfit(times[-36:], prices[-36:], 1)[0] / coin.price
         coin.dy_dx = np.polyfit(times[ -3:], prices[ -3:], 1)[0] / coin.price
@@ -345,7 +344,7 @@ if __name__ == "__main__":
                                     gain_factor = 1 + max(best.gain, .012)
                                     price  = round_price_up(best.symbol, filled_order['price'] * gain_factor)
                                     amount = binance.fetch_balance()[coin]['free']
-                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=10, poll=1)
+                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=15, poll=1)
                                 elapsed_time = time.time() - start_time
 
                                 times, prices = get_prices(best.symbol, '5m', limit=math.ceil(elapsed_time/60/5))
