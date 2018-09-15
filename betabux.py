@@ -64,7 +64,7 @@ def get_coin_forecasts():
 def get_best_coins(coins, hodl):
     print('Looking for best coins...')
 
-    def reduce_order_book(symbol, bound=.03, limit=500):
+    def reduce_order_book(symbol, bound=.01, limit=100):
         book = binance.fetch_order_book(symbol, limit=limit)
         ask_range = (book['asks'][-1][0] - book['asks'][0][0]) / book['asks'][0][0]
         if symbol != 'BTC/USDT' and ask_range < bound:
@@ -77,17 +77,22 @@ def get_best_coins(coins, hodl):
         bid_volume = sum(max(0, unmix(price, bid_bound, bid_price)) * volume * price for price, volume in book['bids'])
         volume = bid_volume + ask_volume
         spread = (ask_price - bid_price) / bid_price
-        return (bid_volume / volume - .5) * 2, bid_volume, np.average([bid_price, ask_price]), spread
+        to_btc = 1/bid_price if symbol == 'BTC/USDT' else 1
+        return (bid_volume / volume - .5) * 2, bid_volume*to_btc, np.average([bid_price, ask_price]), spread
 
     for coin in coins:
-        times, prices = get_prices(coin.symbol, '5m', limit=8*12)
-        low, high = min(prices[-6:]), max(prices[-6:])
         coin.ob, coin.vol, coin.price, coin.spread = reduce_order_book(coin.symbol)
-        tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price']
-        coin.delta = (coin.price*2 - high - low - tick_size) / coin.price
-        hodl_pref = 1 if coin == hodl else 0
-        coin.gain = coin.ob*math.sqrt(min(64, coin.vol))*.01 + clamp(coin.delta*2, -.02, .02) + hodl_pref*.02
 
+        times, prices = get_prices(coin.symbol, '1m', limit=15)
+        tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price']
+        low, high = min(prices), max(prices)
+        coin.delta = (coin.price*2 - high - low - tick_size) / coin.price
+
+        vol_weight = math.pow(min(27, coin.vol), 1/3)*.01
+        hodl_pref = .01 if coin == hodl else 0
+        coin.gain = coin.ob*vol_weight + clamp(coin.delta, -vol_weight, vol_weight) + hodl_pref
+
+        times, prices = get_prices(coin.symbol, '5m', limit=8 * 12)
         coin.plots["st actual"] = times, prices, dict(linestyle='-')
         coin.trend = np.polyfit(times[-36:], prices[-36:], 1)[0] / coin.price
         coin.dy_dx = np.polyfit(times[ -3:], prices[ -3:], 1)[0] / coin.price
@@ -180,10 +185,10 @@ def trade_coin(from_coin, to_coin, start_price, max_change=.01):
         rate = np.polyfit(times, prices, 1)[0]
 
         if side == 'buy':
-            price  = round_price_down(symbol, min(ask_price, bid_price + rate/12))
+            price  = round_price_down(symbol, min(ask_price*1.002, bid_price + rate/12))
             amount = binance.amount_to_lots(symbol, holding_amount / price)
         else:
-            price  = round_price_up  (symbol, max(bid_price, ask_price + rate/12))
+            price  = round_price_up  (symbol, max(bid_price*.998, ask_price + rate/12))
             amount = holding_amount
 
         m1x    = unmix(price, bid_price, ask_price)
@@ -306,7 +311,7 @@ if __name__ == "__main__":
                         rate = np.polyfit(times, prices, 1)[0] / prices[-1]
                         if rate > 0:
                             print(f'Wait while {hodl.name} price increases at {percentage(rate)}/h')
-                            time.sleep(10*60)
+                            time.sleep(5*60)
                             continue
                         else:
                             print(f'Losing {hodl.name} at {percentage(rate)}/h')
@@ -340,7 +345,7 @@ if __name__ == "__main__":
                                     gain_factor = 1 + max(best.gain, .012)
                                     price  = round_price_up(best.symbol, filled_order['price'] * gain_factor)
                                     amount = binance.fetch_balance()[coin]['free']
-                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=30, poll=5)
+                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=10, poll=1)
                                 elapsed_time = time.time() - start_time
 
                                 times, prices = get_prices(best.symbol, '5m', limit=math.ceil(elapsed_time/60/5))
@@ -377,7 +382,7 @@ if __name__ == "__main__":
 
         # Not really needed but just in case...
         loop_minutes = (time.time() - start_time) / 60
-        if loop_minutes < 30:
-            time.sleep(60*(30 - loop_minutes))
+        if loop_minutes < 10:
+            time.sleep(60*(10 - loop_minutes))
 
         print('-'*30 + '\n')
