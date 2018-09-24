@@ -64,7 +64,7 @@ def get_coin_forecasts():
 def get_best_coins(coins, hodl):
     print('Looking for best coins...')
 
-    def reduce_order_book(symbol, bound=.01, limit=100):
+    def reduce_order_book(symbol, bound=.03, limit=500):
         book = binance.fetch_order_book(symbol, limit=limit)
         ask_range = (book['asks'][-1][0] - book['asks'][0][0]) / book['asks'][0][0]
         if symbol != 'BTC/USDT' and ask_range < bound:
@@ -88,8 +88,8 @@ def get_best_coins(coins, hodl):
         tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price']
         coin.delta = (coin.price*2 - high - low - tick_size) / coin.price
 
-        vol_weight = math.pow(min(36, coin.vol), 1/2)*.01
-        hodl_pref = .01 if coin == hodl else 0
+        vol_weight = math.pow(min(64, coin.vol), 1/2)*.01
+        hodl_pref = .02 if coin == hodl else 0
         coin.gain = coin.ob*vol_weight + clamp(coin.delta, -vol_weight, vol_weight) + hodl_pref
 
         coin.plots["st actual"] = times, prices, dict(linestyle='-')
@@ -344,7 +344,7 @@ if __name__ == "__main__":
                                     gain_factor = 1 + max(best.gain, .012)
                                     price  = round_price_up(best.symbol, filled_order['price'] * gain_factor)
                                     amount = binance.fetch_balance()[coin]['free']
-                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=15, poll=1)
+                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=30, poll=3)
                                 elapsed_time = time.time() - start_time
 
                                 times, prices = get_prices(best.symbol, '5m', limit=math.ceil(elapsed_time/60/5))
