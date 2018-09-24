@@ -51,7 +51,7 @@ def get_coin_forecasts():
         if len(times) < 16:
             print(f"Skipping {symbol} for missing data. len(ohlcv)={len(times)}")
             continue
-        plots = {"lt actual": (times, prices, dict(linestyle='-', marker='o'))}
+        plots = {"lt": (times, prices, dict(linestyle='-', marker='o'))}
         name = symbol.split('/')[0]
         coin = Coin(name, symbol) # coin.gain set in get_best_coins
         coin.plots = plots
@@ -64,7 +64,7 @@ def get_coin_forecasts():
 def get_best_coins(coins, hodl):
     print('Looking for best coins...')
 
-    def reduce_order_book(symbol, bound=.03, limit=500):
+    def reduce_order_book(symbol, bound=.02, limit=500):
         book = binance.fetch_order_book(symbol, limit=limit)
         ask_range = (book['asks'][-1][0] - book['asks'][0][0]) / book['asks'][0][0]
         if symbol != 'BTC/USDT' and ask_range < bound:
@@ -83,23 +83,19 @@ def get_best_coins(coins, hodl):
     for coin in coins:
         coin.ob, coin.vol, coin.price, coin.spread = reduce_order_book(coin.symbol)
 
-        times, prices = get_prices(coin.symbol, '5m', limit=8*12)
-        low, high = min(prices[-6:]), max(prices[-6:])
-        tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price']
-        coin.delta = (coin.price*2 - high - low - tick_size) / coin.price
+        vol_weight = math.pow(min(36, coin.vol), 1/2)*.01
+        hodl_pref = .01 if coin == hodl else 0
+        coin.gain = coin.ob*vol_weight + hodl_pref
 
-        vol_weight = math.pow(min(64, coin.vol), 1/2)*.01
-        hodl_pref = .02 if coin == hodl else 0
-        coin.gain = coin.ob*vol_weight + clamp(coin.delta, -vol_weight, vol_weight) + hodl_pref
-
-        coin.plots["st actual"] = times, prices, dict(linestyle='-')
+        times, prices = get_prices(coin.symbol, '5m', limit=8 * 12)
+        coin.plots["st"] = times, prices, dict(linestyle='-')
         coin.trend = np.polyfit(times[-36:], prices[-36:], 1)[0] / coin.price
         coin.dy_dx = np.polyfit(times[ -3:], prices[ -3:], 1)[0] / coin.price
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
     vals = lambda coin: ("*" if coin == hodl else " ")+\
                         f"{coin.name}: {percentage(coin.gain)} ob={round(coin.ob, 2)} vol={round(coin.vol)} "\
-                        f"Δ={percentage(coin.delta)} y'={percentage(coin.dy_dx)}/h"
+                        f"y'={percentage(coin.dy_dx)}/h"
     best = coins[:4]
     if hodl not in best: best.append(hodl)
     print('\n'.join(vals(coin) for coin in best))
