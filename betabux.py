@@ -85,7 +85,8 @@ def get_best_coins(coins, hodl):
 
         vol_weight = math.pow(min(36, coin.vol), 1/2)*.01
         hodl_pref = .01 if coin == hodl else 0
-        coin.gain = coin.ob*vol_weight + hodl_pref
+        tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price']
+        coin.gain = coin.ob*vol_weight + hodl_pref - tick_size/coin.price
 
         times, prices = get_prices(coin.symbol, '5m', limit=8 * 12)
         coin.plots["st"] = times, prices, dict(linestyle='-')
