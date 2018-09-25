@@ -166,7 +166,8 @@ def trade_coin(from_coin, to_coin, start_price, max_change=.01):
         symbol = f"{from_coin}/{to_coin}"
         good_direction = 1
 
-    for i in range(3):
+    filled = 0
+    for i in range(6):
         book = binance.fetch_order_book(symbol, limit=5)
         bid_price = book['bids'][0][0]
         ask_price = book['asks'][0][0]
@@ -192,9 +193,13 @@ def trade_coin(from_coin, to_coin, start_price, max_change=.01):
         rate   = rate / avg_price
         print(f"{side} {amount} {symbol} at {price} mix={round(m1x, 1)} <->={percentage(spread)} y'={percentage(rate)}/h")
 
-        filled_order = create_order_and_wait(symbol, side, amount, price)
-        if filled_order:
-            return filled_order
+        order = create_order_and_wait(symbol, side, amount, price)
+        if order['status'] == 'closed':
+            return order
+
+        filled += order['filled']
+        if filled == 0:
+            break
 
     raise TimeoutError(f"{side} of {symbol} didn't get filled")
 
@@ -218,6 +223,7 @@ def create_order_and_wait(symbol, side, amount, price, type='limit', timeout=5, 
 
     print(f"Cancelling order {id} {symbol}")
     binance.cancel_order(id, symbol=symbol)
+    return order
 
 
 def email_myself_plots(subject, coins, log):
