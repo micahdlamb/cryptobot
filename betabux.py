@@ -46,6 +46,27 @@ class Candles(list):
         return times, prices
 
     @property
+    def rate(self):
+        times, prices = self.prices
+        return np.polyfit(times, prices, 1)[0]
+
+    @property
+    def delta(self):
+        return self.last_price * 2 - self.max - self.min
+
+    @property
+    def first_price(self):
+        return self[0][1]
+
+    @property
+    def last_price(self):
+        return self[-1][-1]
+
+    @property
+    def last_time(self):
+        return self[-1][0] / milli_seconds_in_hour
+
+    @property
     def min(self):
         return min(candle[3] for candle in self)
 
@@ -66,15 +87,15 @@ def get_coin_forecasts():
     class Coin(collections.namedtuple("Coin", "name symbol")): pass
     coins = []
     for symbol in get_symbols():
-        times, prices = Candles(symbol, '1h', limit=16).prices
-        if len(times) < 16:
-            print(f"Skipping {symbol} for missing data. len(ohlcv)={len(times)}")
+        candles = Candles(symbol, '1h', limit=16)
+        if len(candles) < 16:
+            print(f"Skipping {symbol} for missing data. len(ohlcv)={len(candles)}")
             continue
-        plots = {"lt": (times, prices, dict(linestyle='-', marker='o'))}
+        plots = {"lt": (*candles.prices, dict(linestyle='-', marker='o'))}
         name = symbol.split('/')[0]
         coin = Coin(name, symbol) # coin.gain set in get_best_coins
         coin.plots = plots
-        coin.zero_time = times[-1]
+        coin.zero_time = candles.last_time
         coins.append(coin)
 
     return coins
@@ -83,7 +104,7 @@ def get_coin_forecasts():
 def get_best_coins(coins, hodl):
     print('Looking for best coins...')
 
-    def reduce_order_book(symbol, bound=.01, limit=100):
+    def reduce_order_book(symbol, bound=.02, limit=500):
         book = binance.fetch_order_book(symbol, limit=limit)
         ask_range = (book['asks'][-1][0] - book['asks'][0][0]) / book['asks'][0][0]
         if symbol != 'BTC/USDT' and ask_range < bound:
@@ -103,13 +124,13 @@ def get_best_coins(coins, hodl):
         coin.ob, coin.vol, coin.price, coin.spread = reduce_order_book(coin.symbol)
         vol_weight = min(64, coin.vol)**(1/2)*.01
         tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price'] / coin.price
-        hodl_pref = .01 if coin.name != 'BTC' and coin == hodl else 0
+        hodl_pref = .02 if coin.name != 'BTC' and coin == hodl else 0
         coin.gain = coin.ob*vol_weight - tick_size + hodl_pref
 
-        times, prices = Candles(coin.symbol, '5m', limit=8*12).prices
-        coin.plots["st"] = times, prices, dict(linestyle='-')
-        coin.trend = np.polyfit(times[-12:], prices[-12:], 1)[0] / coin.price
-        coin.dy_dx = np.polyfit(times[ -3:], prices[ -3:], 1)[0] / coin.price
+        candles = Candles(coin.symbol, '5m', limit=8*12)
+        coin.plots["st"] = *candles.prices, dict(linestyle='-')
+        coin.trend = candles[-12:].rate / coin.price
+        coin.dy_dx = candles[ -3:].rate / coin.price
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
     vals = lambda coin: ("*" if coin == hodl else " ")+\
@@ -196,14 +217,13 @@ def trade_coin(from_coin, to_coin, start_price, max_change=.01):
             raise TimeoutError(f"{side} of {symbol} aborted due to price change of {percentage(bad_change)}")
 
         holding_amount = binance.fetch_balance()[from_coin]['free']
-        times, prices = Candles(symbol, '1m', limit=15).prices
-        rate = np.polyfit(times, prices, 1)[0]
+        rate = Candles(symbol, '1m', limit=10).rate
 
         if side == 'buy':
-            price  = round_price_down(symbol, min(ask_price*1.002, bid_price + rate/12))
+            price  = round_price_down(symbol, min(ask_price*1.002, bid_price + rate/20))
             amount = binance.amount_to_lots(symbol, holding_amount / price)
         else:
-            price  = round_price_up  (symbol, max(bid_price*.998, ask_price + rate/12))
+            price  = round_price_up  (symbol, max(bid_price*.998, ask_price + rate/20))
             amount = holding_amount
 
         m1x    = unmix(price, bid_price, ask_price)
@@ -327,8 +347,8 @@ if __name__ == "__main__":
                     hodl  = next(c for c in coins if c.name == holding.name)
 
                     if hodl.name != 'BTC':
-                        times, prices = Candles(hodl.symbol, '1m', limit=10).prices
-                        rate = np.polyfit(times, prices, 1)[0] / prices[-1]
+                        candles = Candles(hodl.symbol, '1m', limit=10)
+                        rate = candles.rate / candles.first_price
                         if rate > 0:
                             print(f'Wait while {hodl.name} price increases at {percentage(rate)}/h')
                             time.sleep(5*60)
@@ -373,8 +393,8 @@ if __name__ == "__main__":
                                     create_order_and_wait(best.symbol, 'sell', amount, price, timeout=15, poll=3)
                                 elapsed_time = time.time() - start_time
 
-                                times, prices = Candles(best.symbol, '5m', limit=math.ceil(elapsed_time/60/5)).prices
-                                plots['holding'] = times, prices, dict(linestyle='-')
+                                candles = Candles(best.symbol, '5m', limit=math.ceil(elapsed_time/60/5))
+                                plots['holding'] = *candles.prices, dict(linestyle='-')
 
                         except TimeoutError as error:
                             result += '...timed out'
