@@ -103,7 +103,7 @@ def get_coin_forecasts():
         coin = Coin(name, symbol, expected) # coin.gain set in get_best_coins
         now = coin.zero_time = candles.last_time
         coin.plots = {
-            "actual":  (*candles.prices[-16:], dict(linestyle='-', marker='o')),
+            "actual":  (*candles[-16:].prices, dict(linestyle='-', marker='o')),
             "forecast": ([now, now+4], [day_avg, expected], dict(linestyle='--'))
         }
 
@@ -212,10 +212,10 @@ def trade_coin(from_coin, to_coin, start_price, max_change=.01):
         rate = Candles(symbol, '1m', limit=10).rate
 
         if side == 'buy':
-            price  = round_price_down(symbol, min(ask_price*1.002, bid_price + rate/20))
+            price  = round_price_down(symbol, min(ask_price*1.002, bid_price + rate/12))
             amount = binance.amount_to_lots(symbol, holding_amount / price)
         else:
-            price  = round_price_up  (symbol, max(bid_price*.998, ask_price + rate/20))
+            price  = round_price_up  (symbol, max(bid_price*.998, ask_price + rate/12))
             amount = holding_amount
 
         m1x    = unmix(price, bid_price, ask_price)
