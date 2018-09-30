@@ -46,6 +46,10 @@ class Candles(list):
         return times, prices
 
     @property
+    def avg_price(self):
+        return np.average([np.average(candle[2:4]) for candle in self])
+
+    @property
     def rate(self):
         times, prices = self.prices
         return np.polyfit(times, prices, 1)[0]
@@ -84,18 +88,25 @@ class Candles(list):
 
 def get_coin_forecasts():
     print('Forecasting coin prices...')
-    class Coin(collections.namedtuple("Coin", "name symbol")): pass
+    class Coin(collections.namedtuple("Coin", "name symbol expected")): pass
     coins = []
     for symbol in get_symbols():
-        candles = Candles(symbol, '1h', limit=16)
-        if len(candles) < 16:
+        candles = Candles(symbol, '1h', limit=24*7)
+        if len(candles) < 12*7:
             print(f"Skipping {symbol} for missing data. len(ohlcv)={len(candles)}")
             continue
-        plots = {"lt": (*candles.prices, dict(linestyle='-', marker='o'))}
+
+        day_avg = candles[-24:].avg_price
+        expected = day_avg + candles.rate * 4
+
         name = symbol.split('/')[0]
-        coin = Coin(name, symbol) # coin.gain set in get_best_coins
-        coin.plots = plots
-        coin.zero_time = candles.last_time
+        coin = Coin(name, symbol, expected) # coin.gain set in get_best_coins
+        now = coin.zero_time = candles.last_time
+        coin.plots = {
+            "actual":  (*candles.prices[-16:], dict(linestyle='-', marker='o')),
+            "forecast": ([now, now+4], [day_avg, expected], dict(linestyle='--'))
+        }
+
         coins.append(coin)
 
     return coins
@@ -103,39 +114,20 @@ def get_coin_forecasts():
 
 def get_best_coins(coins, hodl):
     print('Looking for best coins...')
-
-    def reduce_order_book(symbol, bound=.02, limit=500):
-        book = binance.fetch_order_book(symbol, limit=limit)
-        ask_range = (book['asks'][-1][0] - book['asks'][0][0]) / book['asks'][0][0]
-        if symbol != 'BTC/USDT' and ask_range < bound:
-            print(f"WARNING {symbol} ask range {round(ask_range, 3)} < {bound}")
-        ask_price = book['asks'][0][0]
-        ask_bound = ask_price * (1+bound)
-        ask_volume = sum(max(0, unmix(price, ask_bound, ask_price)) * volume * price for price, volume in book['asks'])
-        bid_price = book['bids'][0][0]
-        bid_bound = bid_price * (1-bound)
-        bid_volume = sum(max(0, unmix(price, bid_bound, bid_price)) * volume * price for price, volume in book['bids'])
-        volume = bid_volume + ask_volume
-        spread = (ask_price - bid_price) / bid_price
-        to_btc = 1/bid_price if symbol == 'BTC/USDT' else 1
-        return (bid_volume / volume - .5) * 2, bid_volume*to_btc, np.average([bid_price, ask_price]), spread
-
+    tickers = binance.fetch_tickers()
     for coin in coins:
-        coin.ob, coin.vol, coin.price, coin.spread = reduce_order_book(coin.symbol)
-        vol_weight = min(64, coin.vol)**(1/2)*.01
-        tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price'] / coin.price
-        hodl_pref = .02 if coin.name != 'BTC' and coin == hodl else 0
-        coin.gain = coin.ob*vol_weight - tick_size + hodl_pref
+        coin.price = tickers[coin.symbol]['last']
+        hodl_pref = .01 if coin.name != 'BTC' and coin == hodl else 0
+        coin.gain = (coin.expected - coin.price) / coin.price + hodl_pref
 
         candles = Candles(coin.symbol, '5m', limit=8*12)
-        coin.plots["st"] = *candles.prices, dict(linestyle='-')
+        coin.plots["recent"] = *candles.prices, dict(linestyle='-')
         coin.trend = candles[-12:].rate / coin.price
         coin.dy_dx = candles[ -3:].rate / coin.price
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
     vals = lambda coin: ("*" if coin == hodl else " ")+\
-                        f"{coin.name}: {percentage(coin.gain)} ob={round(coin.ob, 2)} vol={round(coin.vol)} "\
-                        f"y'={percentage(coin.dy_dx)}/h"
+                        f"{coin.name}: {percentage(coin.gain)} y'={percentage(coin.dy_dx)}/h"
     best = coins[:4]
     if hodl not in best: best.append(hodl)
     print('\n'.join(vals(coin) for coin in best))
@@ -361,9 +353,9 @@ if __name__ == "__main__":
                     print(f'trend={percentage(trend)}/h')
                     if trend > -.03:
                         best = coins[0]
-                        if hodl.name == 'BTC' and best.gain + trend < .02:
-                            print(f"{best.name} not good enough.  Hold BTC")
-                            best = hodl
+                        #if hodl.name == 'BTC' and best.gain + trend < .02:
+                        #    print(f"{best.name} not good enough.  Hold BTC")
+                        #    best = hodl
 
                     else:
                         btc  = next(c for c in coins if c.name == 'BTC')
