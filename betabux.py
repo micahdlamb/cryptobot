@@ -117,10 +117,11 @@ def get_best_coins(coins, hodl):
     tickers = binance.fetch_tickers()
     for coin in coins:
         coin.price = tickers[coin.symbol]['last']
-        hodl_pref = .01 if coin.name != 'BTC' and coin == hodl else 0
-        coin.gain = (coin.expected - coin.price) / coin.price + hodl_pref
+        tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price']
+        hodl_pref = .02 if coin.name != 'BTC' and coin == hodl else 0
+        coin.gain = (coin.expected - coin.price - tick_size) / coin.price + hodl_pref
 
-        candles = Candles(coin.symbol, '5m', limit=8*12)
+        candles = Candles(coin.symbol, '5m', limit=4*12)
         coin.plots["recent"] = *candles.prices, dict(linestyle='-')
         coin.trend = candles[-12:].rate / coin.price
         coin.dy_dx = candles[ -3:].rate / coin.price
@@ -382,7 +383,7 @@ if __name__ == "__main__":
                                     gain_factor = 1 + max(best.gain, .012)
                                     price  = round_price_up(best.symbol, filled_order['price'] * gain_factor)
                                     amount = binance.fetch_balance()[coin]['free']
-                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=15, poll=3)
+                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=30, poll=3)
                                 elapsed_time = time.time() - start_time
 
                                 candles = Candles(best.symbol, '5m', limit=math.ceil(elapsed_time/60/5))
