@@ -92,12 +92,12 @@ def get_coin_forecasts():
     coins = []
     for symbol in get_symbols():
         candles = Candles(symbol, '1h', limit=16)
-        if len(candles) < 12*7:
+        if len(candles) < 8:
             print(f"Skipping {symbol} for missing data. len(ohlcv)={len(candles)}")
             continue
 
         day_avg = candles[-12:].avg_price
-        expected = day_avg + candles[-12:].rate * 4
+        expected = day_avg + candles[-6:].rate * 4
 
         name = symbol.split('/')[0]
         coin = Coin(name, symbol, expected) # coin.gain set in get_best_coins
