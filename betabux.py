@@ -64,7 +64,7 @@ class Candles(list):
 
     @property
     def last_price(self):
-        return self[-1][-1]
+        return self[-1][-2]
 
     @property
     def last_time(self):
