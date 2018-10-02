@@ -91,21 +91,20 @@ def get_coin_forecasts():
     class Coin(collections.namedtuple("Coin", "name symbol expected")): pass
     coins = []
     for symbol in get_symbols():
-        candles = Candles(symbol, '1h', limit=16)
+        candles = Candles(symbol, '1h', limit=12)
         if len(candles) < 8:
             print(f"Skipping {symbol} for missing data. len(ohlcv)={len(candles)}")
             continue
 
-        times, prices = candles.prices
-        fit = np.polyfit(times, prices, 3)
-        expected = np.polyval(fit, candles.last_time+1)
+        avg_price = candles.avg_price
+        expected = avg_price + candles.delta/2
 
         name = symbol.split('/')[0]
         coin = Coin(name, symbol, expected) # coin.gain set in get_best_coins
         now = coin.zero_time = candles.last_time
         coin.plots = {
-            "actual":   (times, prices, dict(linestyle='-', marker='o')),
-            "forecast": (times, [np.polyval(fit, t) for t in times], dict(linestyle='--'))
+            "actual":   (*candles.prices, dict(linestyle='-', marker='o')),
+            "forecast": ([now-6, now], [avg_price, expected], dict(linestyle='--'))
         }
 
         coins.append(coin)
