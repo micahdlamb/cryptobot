@@ -91,20 +91,20 @@ def get_coin_forecasts():
     class Coin(collections.namedtuple("Coin", "name symbol expected")): pass
     coins = []
     for symbol in get_symbols():
-        candles = Candles(symbol, '1h', limit=16)
+        candles = Candles(symbol, '1h', limit=12)
         if len(candles) < 8:
             print(f"Skipping {symbol} for missing data. len(ohlcv)={len(candles)}")
             continue
 
-        day_avg = candles[-12:].avg_price
-        expected = day_avg + candles[-6:].rate * 4
+        day_avg = candles.avg_price
+        expected = day_avg + candles.rate * 6
 
         name = symbol.split('/')[0]
         coin = Coin(name, symbol, expected) # coin.gain set in get_best_coins
         now = coin.zero_time = candles.last_time
         coin.plots = {
             "actual":  (*candles[-16:].prices, dict(linestyle='-', marker='o')),
-            "forecast": ([now, now+4], [day_avg, expected], dict(linestyle='--'))
+            "forecast": ([now-6, now], [day_avg, expected], dict(linestyle='--'))
         }
 
         coins.append(coin)
@@ -383,7 +383,7 @@ if __name__ == "__main__":
                                     gain_factor = 1 + max(best.gain, .012)
                                     price  = round_price_up(best.symbol, filled_order['price'] * gain_factor)
                                     amount = binance.fetch_balance()[coin]['free']
-                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=30, poll=3)
+                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=15, poll=3)
                                 elapsed_time = time.time() - start_time
 
                                 candles = Candles(best.symbol, '5m', limit=math.ceil(elapsed_time/60/5))
