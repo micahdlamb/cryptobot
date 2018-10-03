@@ -104,7 +104,7 @@ def get_coin_forecasts():
         now = coin.zero_time = candles.last_time
         coin.plots = {
             "actual":   (*candles.prices, dict(linestyle='-', marker='o')),
-            "forecast": ([now-6, now], [avg_price, expected], dict(linestyle='--'))
+            "forecast": ([now-5.5, now+.5], [avg_price, expected], dict(linestyle='--'))
         }
 
         coins.append(coin)
@@ -354,9 +354,9 @@ if __name__ == "__main__":
                     print(f'trend={percentage(trend)}/h')
                     if trend > -.03:
                         best = coins[0]
-                        #if hodl.name == 'BTC' and best.gain + trend < .02:
-                        #    print(f"{best.name} not good enough.  Hold BTC")
-                        #    best = hodl
+                        if hodl.name == 'BTC' and best.gain + trend < .03:
+                            print(f"{best.name} not good enough.  Hold BTC")
+                            best = hodl
 
                     else:
                         btc  = next(c for c in coins if c.name == 'BTC')
