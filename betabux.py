@@ -67,10 +67,6 @@ class Candles(list):
         return self[-1][-2]
 
     @property
-    def last_time(self):
-        return self[-1][0] / milli_seconds_in_hour
-
-    @property
     def min(self):
         return min(candle[3] for candle in self)
 
@@ -96,17 +92,25 @@ def get_coin_forecasts():
             print(f"Skipping {symbol} for missing data. len(ohlcv)={len(candles)}")
             continue
 
-        avg_price = candles.avg_price
-        expected = avg_price + candles.delta/2
+        times, prices = candles.prices
+        fit0 = np.polyfit(times, prices, 0)
+        fit1 = np.polyfit(times, prices, 1)
+        fit2 = np.polyfit(times, prices, 2)
+        val0 = np.polyval(fit0, times[-1])
+        val1 = np.polyval(fit1, times[-1])
+        val2 = np.polyval(fit2, times[-1])
+        expected = min(val0, val1, val2)
 
         name = symbol.split('/')[0]
         coin = Coin(name, symbol, expected) # coin.gain set in get_best_coins
-        now = coin.zero_time = candles.last_time
+        coin.zero_time = times[-1]
         coin.plots = {
-            "actual":   (*candles.prices, dict(linestyle='-', marker='o')),
-            "forecast": ([now-5.5, now+.5], [avg_price, expected], dict(linestyle='--'))
+            "actual": (times, prices, dict(linestyle='-', marker='o')),
+            "fit 0":  (times, [np.polyval(fit0, t) for t in times], dict(linestyle='--')),
+            "fit 1":  (times, [np.polyval(fit1, t) for t in times], dict(linestyle='--')),
+            "fit 2":  (times, [np.polyval(fit2, t) for t in times], dict(linestyle='--'))
         }
-
+        coin.trend = candles[-3:].rate / candles.last_price
         coins.append(coin)
 
     return coins
@@ -121,17 +125,18 @@ def get_best_coins(coins, hodl):
         hodl_pref = .02 if coin.name != 'BTC' and coin == hodl else 0
         coin.gain = (coin.expected - coin.price - tick_size) / coin.price + hodl_pref
 
-        candles = Candles(coin.symbol, '5m', limit=4*12)
-        coin.plots["recent"] = *candles.prices, dict(linestyle='-')
-        coin.trend = candles[-12:].rate / coin.price
-        coin.dy_dx = candles[ -3:].rate / coin.price
-
     coins.sort(key=lambda coin: coin.gain, reverse=True)
-    vals = lambda coin: ("*" if coin == hodl else " ")+\
-                        f"{coin.name}: {percentage(coin.gain)} y'={percentage(coin.dy_dx)}/h"
+
     best = coins[:4]
     if hodl not in best: best.append(hodl)
+    for coin in best:
+        candles = Candles(coin.symbol, '5m', limit=4*12)
+        coin.plots["recent"] = *candles.prices, dict(linestyle='-')
+        coin.dy_dx = candles[ -3:].rate / coin.price
+    vals = lambda coin: ("*" if coin == hodl else " ")+\
+                        f"{coin.name}: {percentage(coin.gain)} y'={percentage(coin.dy_dx)}/h"
     print('\n'.join(vals(coin) for coin in best))
+
     return coins
 
 
@@ -336,7 +341,7 @@ if __name__ == "__main__":
                 from_coin = holding.name
                 result = None
                 coins = get_coin_forecasts()
-                for i in range(12*4):
+                for i in range(12*2):
                     hodl  = next(c for c in coins if c.name == holding.name)
 
                     if hodl.name != 'BTC':
@@ -354,7 +359,7 @@ if __name__ == "__main__":
                     print(f'trend={percentage(trend)}/h')
                     if trend > -.03:
                         best = coins[0]
-                        if hodl.name == 'BTC' and best.gain + trend < .03:
+                        if hodl.name == 'BTC' and best.gain + trend < .04:
                             print(f"{best.name} not good enough.  Hold BTC")
                             best = hodl
 
@@ -378,12 +383,12 @@ if __name__ == "__main__":
                             if coin == best.name:
                                 start_time = time.time()
                                 if coin == "BTC":
-                                    time.sleep(15*60)
+                                    time.sleep(30*60)
                                 else:
                                     gain_factor = 1 + max(best.gain, .012)
                                     price  = round_price_up(best.symbol, filled_order['price'] * gain_factor)
                                     amount = binance.fetch_balance()[coin]['free']
-                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=15, poll=3)
+                                    create_order_and_wait(best.symbol, 'sell', amount, price, timeout=30, poll=3)
                                 elapsed_time = time.time() - start_time
 
                                 candles = Candles(best.symbol, '5m', limit=math.ceil(elapsed_time/60/5))
