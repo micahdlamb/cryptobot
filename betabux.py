@@ -96,19 +96,21 @@ def get_coin_forecasts():
         fit0 = np.polyfit(times, prices, 0)
         fit1 = np.polyfit(times, prices, 1)
         fit2 = np.polyfit(times, prices, 2)
-        val0 = np.polyval(fit0, times[-1])
-        val1 = np.polyval(fit1, times[-1])
-        val2 = np.polyval(fit2, times[-1])
+        forecast_time = times[-1]+1
+        val0 = np.polyval(fit0, forecast_time)
+        val1 = np.polyval(fit1, forecast_time)
+        val2 = np.polyval(fit2, forecast_time)
         expected = min(val0, val1, val2)
 
         name = symbol.split('/')[0]
         coin = Coin(name, symbol, expected) # coin.gain set in get_best_coins
         coin.zero_time = times[-1]
+        fit_times = times + [forecast_time]
         coin.plots = {
             "actual": (times, prices, dict(linestyle='-', marker='o')),
-            "fit 0":  (times, [np.polyval(fit0, t) for t in times], dict(linestyle='--')),
-            "fit 1":  (times, [np.polyval(fit1, t) for t in times], dict(linestyle='--')),
-            "fit 2":  (times, [np.polyval(fit2, t) for t in times], dict(linestyle='--'))
+            "fit 0":  (fit_times, [np.polyval(fit0, t) for t in fit_times], dict(linestyle='--')),
+            "fit 1":  (fit_times, [np.polyval(fit1, t) for t in fit_times], dict(linestyle='--')),
+            "fit 2":  (fit_times, [np.polyval(fit2, t) for t in fit_times], dict(linestyle='--'))
         }
         coin.trend = candles[-3:].rate / candles.last_price
         coins.append(coin)
@@ -343,18 +345,20 @@ if __name__ == "__main__":
                 coins = get_coin_forecasts()
                 trend = np.average([coin.trend for coin in coins])
                 print(f'trend={percentage(trend)}/h')
-                for i in range(12*2):
+                for i in range(6):
                     hodl  = next(c for c in coins if c.name == holding.name)
 
                     if hodl.name != 'BTC':
-                        candles = Candles(hodl.symbol, '1m', limit=10)
-                        rate = candles.rate / candles.first_price
-                        if rate > 0:
-                            print(f'Wait while {hodl.name} price increases at {percentage(rate)}/h')
-                            time.sleep(5*60)
-                            continue
-                        else:
-                            print(f'Losing {hodl.name} at {percentage(rate)}/h')
+                        while True:
+                            candles = Candles(hodl.symbol, '1m', limit=10)
+                            rate = candles.rate / candles.first_price
+                            if rate > 0:
+                                print(f'Wait while {hodl.name} price increases at {percentage(rate)}/h')
+                                time.sleep(5*60)
+                                continue
+                            else:
+                                print(f'Losing {hodl.name} at {percentage(rate)}/h')
+                                break
 
                     coins = get_best_coins(coins, hodl)
                     if trend > -.03:
