@@ -341,6 +341,8 @@ if __name__ == "__main__":
                 from_coin = holding.name
                 result = None
                 coins = get_coin_forecasts()
+                trend = np.average([coin.trend for coin in coins])
+                print(f'trend={percentage(trend)}/h')
                 for i in range(12*2):
                     hodl  = next(c for c in coins if c.name == holding.name)
 
@@ -355,11 +357,9 @@ if __name__ == "__main__":
                             print(f'Losing {hodl.name} at {percentage(rate)}/h')
 
                     coins = get_best_coins(coins, hodl)
-                    trend = np.average([coin.trend for coin in coins])
-                    print(f'trend={percentage(trend)}/h')
                     if trend > -.03:
                         best = coins[0]
-                        if hodl.name == 'BTC' and best.gain + trend < .04:
+                        if hodl.name == 'BTC' and best.gain + trend < .02:
                             print(f"{best.name} not good enough.  Hold BTC")
                             best = hodl
 
