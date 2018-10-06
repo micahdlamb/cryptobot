@@ -363,7 +363,7 @@ if __name__ == "__main__":
                     coins = get_best_coins(coins, hodl)
                     if trend > -.03:
                         best = coins[0]
-                        if hodl.name == 'BTC' and best.gain + trend < .02:
+                        if hodl.name == 'BTC' and best.gain + trend < .01:
                             print(f"{best.name} not good enough.  Hold BTC")
                             best = hodl
 
