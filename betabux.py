@@ -135,7 +135,7 @@ def get_best_coins(coins):
 
 
 def hold_coin_while_gaining(coin):
-    print(f"==== Holding {coin.name} ====")
+    print(f"====== Holding {coin.name} ======")
     start_price = binance.fetch_ticker(coin.symbol)['last']
     start_time  = time.time()
 
@@ -303,7 +303,7 @@ def email_myself_plots(subject, coins, log):
     imgs = ""
     bufs = []
     for coin in coins:
-        plt.title(f"{coin.name}  {percentage(coin.gain)}")
+        plt.title(coin.name+(f"  {percentage(coin.gain)}" if hasattr(coin, 'gain') else ""))
         plt.xlabel("hours")
         plt.xticks(range(-100 * 4, 10 * 4, 4))
         for name, (x, y, kwds) in coin.plots.items():
