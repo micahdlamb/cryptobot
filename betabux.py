@@ -124,7 +124,7 @@ def get_best_coins(coins):
         coin.gain = (candles.acceleration - tick_size) / coin.price
 
         coin.plots["recent"] = *candles.prices, dict(linestyle='-')
-        coin.dy_dx = candles[ -5:].rate / coin.price
+        coin.dy_dx = candles[-3:].rate / coin.price
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
 
@@ -135,19 +135,19 @@ def get_best_coins(coins):
 
 
 def hold_coin_while_gaining(coin):
-    print(f"=== Holding {coin.name} ===")
+    print(f"==== Holding {coin.name} ====")
     start_price = binance.fetch_ticker(coin.symbol)['last']
     start_time  = time.time()
 
     cell = lambda s: s.ljust(9)
-    print(cell("y'"), cell("y' real"), cell('gain'))
+    print(cell("y'"), cell("rate"), cell('gain'))
 
     while True:
         candles = Candles(coin.symbol, '3m', limit=20)
         deriv = np.polyder(candles.polyfit(2))
         now  = np.polyval(deriv, candles.end_time)     / start_price
-        soon = np.polyval(deriv, candles.end_time+1/4) / start_price
-        real = candles[-5:].rate / start_price
+        soon = np.polyval(deriv, candles.end_time+1/6) / start_price
+        real = candles[-3:].rate / start_price
         gain = (binance.fetch_ticker(coin.symbol)['last'] - start_price) / start_price
         print(cell(f"{percentage(now)}/h"), cell(f"{percentage(real)}/h"), cell(percentage(gain)))
 
@@ -158,7 +158,7 @@ def hold_coin_while_gaining(coin):
             except TimeoutError as err:
                 print(err)
         else:
-            time.sleep(5*60)
+            time.sleep(3*60)
 
     elapsed_time = time.time() - start_time
     candles = Candles(coin.symbol, '5m', limit=math.ceil(elapsed_time / 60 / 5))
