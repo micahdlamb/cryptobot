@@ -29,67 +29,75 @@ unmix = lambda value, frm, to: (value - frm) / (to - frm)
 percentage = lambda value: f"{round(value*100, 2)}%"
 
 
-def get_symbols():
-    return ['BTC/USDT'] + [symbol for symbol, market in binance.markets.items()
-                           if market['active'] and symbol.endswith('/BTC')]
+def main():
+    start_balance = get_balance()
 
+    while True:
+        start_time = time.time()
+        try:
+            with io.StringIO() as log, contextlib.redirect_stdout(Tee(log, sys.stdout)):
+                tickers = binance.fetch_tickers()
+                market_delta = np.average([v['percentage'] for k, v in tickers.items() if k.endswith('/BTC')])
+                print(f"24 hour alt coin change: {market_delta}%")
 
-class Candles(list):
-    def __init__(self, symbol, timeFrame, limit):
-        super().__init__(binance.fetch_ohlcv(symbol, timeFrame, limit=limit))
+                coins = get_coins()
+                holding = get_holding_coin()
+                hodl = next(c for c in coins if c.name == holding.name)
+                btc  = next(c for c in coins if c.name == 'BTC')
+                tusd = next(c for c in coins if c.name == 'TUSD')
 
-    @property
-    def prices(self):
-        prices = [np.average(candle[2:4]) for candle in self]
-        to_center = (self[-1][0] - self[-2][0]) / 2
-        times = [(candle[0] + to_center) / milli_seconds_in_hour for candle in self]
-        return times, prices
+                trend = np.average([coin.trend for coin in coins])
+                print(f'trend={percentage(trend)}/h')
 
-    def polyfit(self, deg):
-        return np.polyfit(*self.prices, deg)
+                if hodl is btc and trend < -.02:
+                    result = f"Hold BTC while market crashing..."
+                    time.sleep(60*60)
 
-    @property
-    def avg_price(self):
-        return self.polyfit(0)[0]
+                else:
+                    result  = ""
+                    if hodl is btc:
+                        result = "BTC -> "
+                        while True:
+                            coins = get_best_coins(coins)
+                            best = coins[0]
 
-    @property
-    def rate(self):
-        return self.polyfit(1)[0]
+                            if best.gain + trend < .03:
+                                print(f"{best.name} not good enough.  Hold BTC")
+                                time.sleep(5*60)
+                                continue
 
-    @property
-    def acceleration(self):
-        return self.polyfit(2)[0]
+                            if best is btc:
+                                print('Hold BTC')
+                                time.sleep(30)
+                                continue
 
-    @property
-    def delta(self):
-        return self.end_price * 2 - self.max - self.min
+                            try:
+                                filled_order = trade_coin('BTC', best.name, max_change=(best.price, .02))
+                                hodl = best
+                                break
+                            except TimeoutError as error:
+                                print(error)
 
-    @property
-    def start_price(self):
-        return self[0][1]
+                    result += f"{hodl.name} -> BTC"
+                    hold_coin_while_gaining(hodl)
 
-    @property
-    def end_price(self):
-        return self[-1][-2]
+                email_myself_plots(result, start_balance, [hodl], log.getvalue())
 
-    @property
-    def end_time(self):
-        return self[-1][0] / milli_seconds_in_hour
+        except:
+            import traceback
+            error = traceback.format_exc()
+            print(error, file=sys.stderr)
+            msg = EmailMessage()
+            msg['Subject'] = 'ERROR'
+            msg.set_content(error)
+            email_myself(msg)
 
-    @property
-    def min(self):
-        return min(candle[3] for candle in self)
+        # Not really needed but just in case...
+        loop_minutes = (time.time() - start_time) / 60
+        if loop_minutes < 10:
+            time.sleep(60*(10 - loop_minutes))
 
-    @property
-    def max(self):
-        return max(candle[2] for candle in self)
-
-    def __getitem__(self, item):
-        if isinstance(item, slice):
-            items = Candles.__new__(Candles)
-            list.__init__(items, super().__getitem__(item))
-            return items
-        return super().__getitem__(item)
+        print('-'*30 + '\n')
 
 
 def get_coins():
@@ -143,7 +151,7 @@ def hold_coin_while_gaining(coin):
     print(cell("y'"), cell("rate"), cell('gain'))
 
     while True:
-        candles = Candles(coin.symbol, '3m', limit=40)
+        candles = Candles(coin.symbol, '3m', limit=10)
         deriv = np.polyder(candles.polyfit(2))
         now  = np.polyval(deriv, candles.end_time)     / start_price
         soon = np.polyval(deriv, candles.end_time+1/6) / start_price
@@ -163,52 +171,6 @@ def hold_coin_while_gaining(coin):
     elapsed_time = time.time() - start_time
     candles = Candles(coin.symbol, '5m', limit=math.ceil(elapsed_time / 60 / 5))
     coin.plots['holding'] = *candles.prices, dict(linestyle='-')
-
-
-def get_balance():
-    def to_btc(coin, amount):
-        if coin == 'BTC':
-            return amount
-        if coin == 'USDT':
-            return amount / tickers["BTC/USDT"]['last']
-        return amount * tickers[f"{coin}/BTC"]['last']
-
-    def to_usdt(coin, amount):
-        return to_btc(coin, amount) * tickers["BTC/USDT"]['last']
-    
-    tickers = binance.fetch_tickers()
-    tradeable = lambda coin: coin == 'BTC' or f"{coin}/BTC" in tickers
-    balance = binance.fetch_balance()
-    balance = {coin: info for coin, info in balance.items() if tradeable(coin)}
-    
-    Coin = collections.namedtuple("Coin", "name amount amount_free amount_used btc btc_free usdt")
-    def coin(name, info):
-        amount, free, used = info['total'], info['free'], info['used']
-        return Coin(name, amount, free, used, to_btc(name, amount), to_btc(name, free), to_usdt(name, amount))
-
-    coins = {name: coin(name, info) for name,info in balance.items()}  
-    Balance = collections.namedtuple("Balance", "btc usdt coins")
-    btc  = sum(coin.btc  for coin in coins.values())
-    usdt = sum(coin.usdt for coin in coins.values())
-    return Balance(btc, usdt, coins)
-
-
-def get_holding_coin():
-    balance = get_balance()
-    for coin in balance.coins.values():
-        if coin.amount_used:
-            print(f"WARNING {coin.amount_used} {coin.name} is used")
-    
-    return max(balance.coins.values(), key=lambda coin: coin.btc_free)
-
-
-def round_price_up(symbol, price):
-    scale = 10**binance.markets[symbol]['precision']['price']
-    return math.ceil(price * scale) / scale
-
-def round_price_down(symbol, price):
-    scale = 10**binance.markets[symbol]['precision']['price']
-    return math.floor(price * scale) / scale
 
 
 trade_log = []
@@ -289,7 +251,7 @@ def create_order_and_wait(symbol, side, amount, price, type='limit', timeout=5, 
     return order
 
 
-def email_myself_plots(subject, coins, log):
+def email_myself_plots(subject, start_balance, coins, log):
     msg = EmailMessage()
 
     balance = get_balance()
@@ -342,7 +304,114 @@ def email_myself(msg):
     server.quit()
 
 
-# MAIN #################################################################################################################
+class Candles(list):
+    def __init__(self, symbol, timeFrame, limit):
+        super().__init__(binance.fetch_ohlcv(symbol, timeFrame, limit=limit))
+
+    @property
+    def prices(self):
+        prices = [np.average(candle[2:4]) for candle in self]
+        to_center = (self[-1][0] - self[-2][0]) / 2
+        times = [(candle[0] + to_center) / milli_seconds_in_hour for candle in self]
+        return times, prices
+
+    def polyfit(self, deg):
+        return np.polyfit(*self.prices, deg)
+
+    @property
+    def avg_price(self):
+        return self.polyfit(0)[0]
+
+    @property
+    def rate(self):
+        return self.polyfit(1)[0]
+
+    @property
+    def acceleration(self):
+        return self.polyfit(2)[0]
+
+    @property
+    def delta(self):
+        return self.end_price * 2 - self.max - self.min
+
+    @property
+    def start_price(self):
+        return self[0][1]
+
+    @property
+    def end_price(self):
+        return self[-1][-2]
+
+    @property
+    def end_time(self):
+        return self[-1][0] / milli_seconds_in_hour
+
+    @property
+    def min(self):
+        return min(candle[3] for candle in self)
+
+    @property
+    def max(self):
+        return max(candle[2] for candle in self)
+
+    def __getitem__(self, item):
+        if isinstance(item, slice):
+            items = Candles.__new__(Candles)
+            list.__init__(items, super().__getitem__(item))
+            return items
+        return super().__getitem__(item)
+
+
+def get_symbols():
+    return ['BTC/USDT'] + [symbol for symbol, market in binance.markets.items()
+                           if market['active'] and symbol.endswith('/BTC')]
+
+
+def get_balance():
+    def to_btc(coin, amount):
+        if coin == 'BTC':
+            return amount
+        if coin == 'USDT':
+            return amount / tickers["BTC/USDT"]['last']
+        return amount * tickers[f"{coin}/BTC"]['last']
+
+    def to_usdt(coin, amount):
+        return to_btc(coin, amount) * tickers["BTC/USDT"]['last']
+    
+    tickers = binance.fetch_tickers()
+    tradeable = lambda coin: coin == 'BTC' or f"{coin}/BTC" in tickers
+    balance = binance.fetch_balance()
+    balance = {coin: info for coin, info in balance.items() if tradeable(coin)}
+    
+    Coin = collections.namedtuple("Coin", "name amount amount_free amount_used btc btc_free usdt")
+    def coin(name, info):
+        amount, free, used = info['total'], info['free'], info['used']
+        return Coin(name, amount, free, used, to_btc(name, amount), to_btc(name, free), to_usdt(name, amount))
+
+    coins = {name: coin(name, info) for name,info in balance.items()}  
+    Balance = collections.namedtuple("Balance", "btc usdt coins")
+    btc  = sum(coin.btc  for coin in coins.values())
+    usdt = sum(coin.usdt for coin in coins.values())
+    return Balance(btc, usdt, coins)
+
+
+def get_holding_coin():
+    balance = get_balance()
+    for coin in balance.coins.values():
+        if coin.amount_used:
+            print(f"WARNING {coin.amount_used} {coin.name} is used")
+    
+    return max(balance.coins.values(), key=lambda coin: coin.btc_free)
+
+
+def round_price_up(symbol, price):
+    scale = 10**binance.markets[symbol]['precision']['price']
+    return math.ceil(price * scale) / scale
+
+def round_price_down(symbol, price):
+    scale = 10**binance.markets[symbol]['precision']['price']
+    return math.floor(price * scale) / scale
+
 
 class Tee:
     def __init__(self, *files):
@@ -354,72 +423,6 @@ class Tee:
         for file in self.files:
             file.flush()
 
+
 if __name__ == "__main__":
-    start_balance = get_balance()
-
-    while True:
-        start_time = time.time()
-        try:
-            with io.StringIO() as log, contextlib.redirect_stdout(Tee(log, sys.stdout)):
-                tickers = binance.fetch_tickers()
-                market_delta = np.average([v['percentage'] for k, v in tickers.items() if k.endswith('/BTC')])
-                print(f"24 hour alt coin change: {market_delta}%")
-
-                coins = get_coins()
-                holding = get_holding_coin()
-                hodl = next(c for c in coins if c.name == holding.name)
-                btc  = next(c for c in coins if c.name == 'BTC')
-                tusd = next(c for c in coins if c.name == 'TUSD')
-
-                trend = np.average([coin.trend for coin in coins])
-                print(f'trend={percentage(trend)}/h')
-
-                if hodl is btc and trend < -.02:
-                    result = f"Hold BTC while market crashing..."
-                    time.sleep(60*60)
-
-                else:
-                    result  = ""
-                    if hodl is btc:
-                        result = "BTC -> "
-                        while True:
-                            coins = get_best_coins(coins)
-                            best = coins[0]
-
-                            if best.gain + trend < .02:
-                                print(f"{best.name} not good enough.  Hold BTC")
-                                time.sleep(5*60)
-                                continue
-
-                            if best is btc:
-                                print('Hold BTC')
-                                time.sleep(30)
-                                continue
-
-                            try:
-                                filled_order = trade_coin('BTC', best.name, max_change=(best.price, .02))
-                                hodl = best
-                                break
-                            except TimeoutError as error:
-                                print(error)
-
-                    result += f"{hodl.name} -> BTC"
-                    hold_coin_while_gaining(hodl)
-
-                email_myself_plots(result, [hodl], log.getvalue())
-
-        except:
-            import traceback
-            error = traceback.format_exc()
-            print(error, file=sys.stderr)
-            msg = EmailMessage()
-            msg['Subject'] = 'ERROR'
-            msg.set_content(error)
-            email_myself(msg)
-
-        # Not really needed but just in case...
-        loop_minutes = (time.time() - start_time) / 60
-        if loop_minutes < 10:
-            time.sleep(60*(10 - loop_minutes))
-
-        print('-'*30 + '\n')
+    main()
