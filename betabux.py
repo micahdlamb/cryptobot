@@ -119,7 +119,7 @@ def get_best_coins(coins):
     tickers = binance.fetch_tickers()
     for coin in coins:
         coin.price = tickers[coin.symbol]['last']
-        candles = Candles(coin.symbol, '3m', limit=20)
+        candles = Candles(coin.symbol, '3m', limit=40)
         tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price']
         coin.gain = (candles.acceleration - tick_size) / coin.price
 
@@ -143,7 +143,7 @@ def hold_coin_while_gaining(coin):
     print(cell("y'"), cell("rate"), cell('gain'))
 
     while True:
-        candles = Candles(coin.symbol, '3m', limit=20)
+        candles = Candles(coin.symbol, '3m', limit=40)
         deriv = np.polyder(candles.polyfit(2))
         now  = np.polyval(deriv, candles.end_time)     / start_price
         soon = np.polyval(deriv, candles.end_time+1/6) / start_price
@@ -406,7 +406,7 @@ if __name__ == "__main__":
                     result += f"{hodl.name} -> BTC"
                     hold_coin_while_gaining(hodl)
 
-                email_myself_plots(result, [btc, hodl], log.getvalue())
+                email_myself_plots(result, [hodl], log.getvalue())
 
         except:
             import traceback
