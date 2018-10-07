@@ -129,12 +129,11 @@ def get_best_coins(coins):
         coin.price = tickers[coin.symbol]['last']
         candles = Candles(coin.symbol, '5m', limit=12*2)
         times, prices = candles.prices
-        fit = np.polyfit(times, prices, 1)
+        fit, error, *_ = np.polyfit(times, prices, 1, full=True)
         coin.rate = np.average([fit[0], candles[-6:].rate]) / coin.price
-        fit_prices = np.polyval(fit, times)
-        coin.error = np.average(np.abs(prices-fit_prices)) / coin.price
+        coin.error = error[0] / coin.price**2
         tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price'] / coin.price
-        coin.gain = coin.rate / (1+(coin.error*100)**2) - tick_size
+        coin.gain = coin.rate / (1+(coin.error*400)) - tick_size
 
         coin.plots["recent"] = *candles.prices, dict(linestyle='-')
         coin.dy_dx = candles[-3:].rate / coin.price
