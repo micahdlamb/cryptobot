@@ -127,7 +127,7 @@ def get_best_coins(coins):
     tickers = binance.fetch_tickers()
     for coin in coins:
         coin.price = tickers[coin.symbol]['last']
-        candles = Candles(coin.symbol, '3m', limit=40)
+        candles = Candles(coin.symbol, '3m', limit=10)
         tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price']
         coin.gain = (candles.acceleration - tick_size) / coin.price
 
