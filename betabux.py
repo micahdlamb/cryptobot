@@ -127,17 +127,21 @@ def get_best_coins(coins):
     tickers = binance.fetch_tickers()
     for coin in coins:
         coin.price = tickers[coin.symbol]['last']
-        candles = Candles(coin.symbol, '5m', limit=12*4)
-        tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price']
-        coin.gain = (candles.acceleration - tick_size) / coin.price
+        candles = Candles(coin.symbol, '5m', limit=12*2)
+        times, prices = candles.prices
+        fit = np.polyfit(times, prices, 1)
+        coin.rate = np.average([fit[0], candles[-6:].rate]) / coin.price
+        fit_prices = np.polyval(fit, times)
+        coin.error = np.average(np.abs(prices-fit_prices)) / coin.price
+        tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price'] / coin.price
+        coin.gain = coin.rate / (1+(coin.error*100)**2) - tick_size
 
         coin.plots["recent"] = *candles.prices, dict(linestyle='-')
         coin.dy_dx = candles[-3:].rate / coin.price
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
-
     best = coins[:4]
-    vals = lambda coin: f"{coin.name}: {percentage(coin.gain)}/h² y'={percentage(coin.dy_dx)}/h"
+    vals = lambda coin: f"{coin.name}: {percentage(coin.gain)} rate={percentage(coin.rate)}/h error={percentage(coin.error)} y'={percentage(coin.dy_dx)}/h"
     print('\n'.join(vals(coin) for coin in best))
     return coins
 
@@ -151,7 +155,7 @@ def hold_coin_while_gaining(coin):
     print(cell("y'"), cell("rate"), cell('gain'))
 
     while True:
-        candles = Candles(coin.symbol, '5m', limit=12*4)
+        candles = Candles(coin.symbol, '5m', limit=12*2)
         deriv = np.polyder(candles.polyfit(2))
         now  = np.polyval(deriv, candles.end_time)     / start_price
         soon = np.polyval(deriv, candles.end_time+1/6) / start_price
@@ -159,7 +163,7 @@ def hold_coin_while_gaining(coin):
         gain = (binance.fetch_ticker(coin.symbol)['last'] - start_price) / start_price
         print(cell(f"{percentage(now)}/h"), cell(f"{percentage(real)}/h"), cell(percentage(gain)))
 
-        if soon < 0:
+        if real < 0 and soon < 0:
             try:
                 trade_coin(coin.name, 'BTC')
                 break
@@ -328,7 +332,7 @@ class Candles(list):
 
     @property
     def acceleration(self):
-        return self.polyfit(2)[0]
+        return self.polyfit(2)[0] * 2
 
     @property
     def delta(self):
