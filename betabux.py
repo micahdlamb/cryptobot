@@ -61,7 +61,7 @@ def main():
                             coins = get_best_coins(coins)
                             best = coins[0]
 
-                            if best.gain + trend < .03:
+                            if best.gain + trend < .02:
                                 print(f"{best.name} not good enough.  Hold BTC")
                                 time.sleep(5*60)
                                 continue
@@ -127,7 +127,7 @@ def get_best_coins(coins):
     tickers = binance.fetch_tickers()
     for coin in coins:
         coin.price = tickers[coin.symbol]['last']
-        candles = Candles(coin.symbol, '3m', limit=10)
+        candles = Candles(coin.symbol, '5m', limit=12*4)
         tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price']
         coin.gain = (candles.acceleration - tick_size) / coin.price
 
@@ -151,7 +151,7 @@ def hold_coin_while_gaining(coin):
     print(cell("y'"), cell("rate"), cell('gain'))
 
     while True:
-        candles = Candles(coin.symbol, '3m', limit=10)
+        candles = Candles(coin.symbol, '5m', limit=12*4)
         deriv = np.polyder(candles.polyfit(2))
         now  = np.polyval(deriv, candles.end_time)     / start_price
         soon = np.polyval(deriv, candles.end_time+1/6) / start_price
@@ -166,7 +166,7 @@ def hold_coin_while_gaining(coin):
             except TimeoutError as err:
                 print(err)
         else:
-            time.sleep(3*60)
+            time.sleep(10*60)
 
     elapsed_time = time.time() - start_time
     candles = Candles(coin.symbol, '5m', limit=math.ceil(elapsed_time / 60 / 5))
