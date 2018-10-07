@@ -49,7 +49,7 @@ def main():
                 trend = np.average([coin.trend for coin in coins])
                 print(f'trend={percentage(trend)}/h')
 
-                if hodl is btc and trend < -.02:
+                if hodl is btc and trend < -.01:
                     result = f"Hold BTC while market crashing..."
                     time.sleep(60*60)
 
