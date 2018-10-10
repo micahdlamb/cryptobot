@@ -72,7 +72,7 @@ def main():
                                 continue
 
                             try:
-                                filled_order = trade_coin('BTC', best.name, max_change=(best.price, .02))
+                                filled_order = trade_coin('BTC', best.name, max_change=(best.price, .01))
                                 hodl = best
                                 break
                             except TimeoutError as error:
@@ -127,23 +127,40 @@ def get_best_coins(coins):
     tickers = binance.fetch_tickers()
     for coin in coins:
         coin.price = tickers[coin.symbol]['last']
+        # tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price'] / coin.price
+
+        candles = Candles(coin.symbol, '15m', limit=5*4)[:-4]
+        times, prices = candles.prices
+        fit, error, *_ = np.polyfit(times, prices, 1, full=True)
+        coin.trend_rate  = fit[0] / coin.price
+        coin.trend_error = error[0]*1e3 / coin.price**2
+        coin.trend = coin.trend_rate / (1 + coin.trend_error)
+
         candles = Candles(coin.symbol, '3m', limit=20)
         times, prices = candles.prices
         fit, error, *_ = np.polyfit(times, prices, 2, full=True)
-        coin.accel = fit[0] * 2 / coin.price
-        coin.slope = np.polyval(np.polyder(fit, 1), times[-1]) / coin.price
-        coin.error = error[0] / coin.price**2
-        #tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price'] / coin.price
-        coin.gain = coin.accel / (1 + coin.error*1e4 + abs(coin.slope)*1e2)
+        coin.valley_accel = fit[0] * 2 / coin.price
+        coin.valley_slope = np.polyval(np.polyder(fit, 1), times[-1]) / coin.price
+        coin.valley_error = error[0]*1e4 / coin.price**2
+        coin.valley = coin.valley_accel / (1 + coin.valley_error + abs(coin.valley_slope)*1e2)
 
-        coin.plots["recent"] = *candles.prices, dict(linestyle='-')
+        coin.gain = coin.trend + coin.valley
+
+        coin.plots["recent"] = times, prices, dict(linestyle='-')
         coin.rate = candles[-3:].rate / coin.price
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
-    best = coins[:4]
-    vals = lambda coin: (f"{coin.name}: {percentage(coin.gain)} y''={percentage(coin.accel)}/h² y'={percentage(coin.slope)}/h "
-                         f"err={percentage(coin.error)} rt={percentage(coin.rate)}/h")
-    print('\n'.join(vals(coin) for coin in best))
+
+    col  = lambda s: s.ljust(6)
+    rcol = lambda n: str(round(n, 1)).ljust(6)
+    pcol = lambda n: percentage(n).ljust(6)
+    print(col(''), col('gain'), col('trend'), col('valley'), col('trate'), col('terr'), col("y''"), col("y'"), col('verr'), col('rt'))
+    for coin in coins[:10]:
+        print(col(coin.name), pcol(coin.gain), pcol(coin.trend), pcol(coin.valley),
+                              pcol(coin.trend_rate), rcol(coin.trend_error),
+                              pcol(coin.valley_accel), pcol(coin.valley_slope), rcol(coin.valley_error),
+                              pcol(coin.rate))
+
     return coins
 
 
@@ -156,7 +173,7 @@ def hold_coin_while_gaining(coin):
     print(cell("y'"), cell("rate"), cell('gain'))
 
     while True:
-        candles = Candles(coin.symbol, '3m', limit=20)
+        candles = Candles(coin.symbol, '3m', limit=15)
         deriv = np.polyder(candles.polyfit(2))
         now  = np.polyval(deriv, candles.end_time)     / start_price
         soon = np.polyval(deriv, candles.end_time+1/6) / start_price
