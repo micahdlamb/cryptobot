@@ -129,7 +129,7 @@ def get_best_coins(coins):
         coin.price = tickers[coin.symbol]['last']
         # tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price'] / coin.price
 
-        candles = Candles(coin.symbol, '15m', limit=5*4)[:-4]
+        candles = Candles(coin.symbol, '15m', limit=5*4)
         times, prices = candles.prices
         fit, error, *_ = np.polyfit(times, prices, 1, full=True)
         coin.trend_rate  = fit[0] / coin.price
