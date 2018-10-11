@@ -61,7 +61,7 @@ def main():
                             coins = get_best_coins(coins)
                             best = coins[0]
 
-                            if best.gain + trend < .02:
+                            if best.gain + trend < .025:
                                 print(f"{best.name} not good enough.  Hold BTC")
                                 time.sleep(5*60)
                                 continue
@@ -134,7 +134,7 @@ def get_best_coins(coins):
         fit, error, *_ = np.polyfit(times, prices, 1, full=True)
         coin.trend_rate  = fit[0] / coin.price
         coin.trend_error = error[0]*1e3 / coin.price**2
-        coin.trend = coin.trend_rate / (1 + coin.trend_error)
+        coin.trend = coin.trend_rate*2 / (1 + coin.trend_error)
 
         candles = Candles(coin.symbol, '3m', limit=20)
         times, prices = candles.prices
@@ -142,7 +142,7 @@ def get_best_coins(coins):
         coin.valley_accel = fit[0] * 2 / coin.price
         coin.valley_slope = np.polyval(np.polyder(fit, 1), times[-1]) / coin.price
         coin.valley_error = error[0]*1e4 / coin.price**2
-        coin.valley = coin.valley_accel / (1 + coin.valley_error + abs(coin.valley_slope)*1e2)
+        coin.valley = coin.valley_accel / (1 + coin.valley_error + abs(max(coin.trend_rate, 1) - coin.valley_slope)*1e2)
 
         coin.gain = coin.trend + coin.valley
 
@@ -176,7 +176,7 @@ def hold_coin_while_gaining(coin):
         candles = Candles(coin.symbol, '3m', limit=15)
         deriv = np.polyder(candles.polyfit(2))
         now  = np.polyval(deriv, candles.end_time)     / start_price
-        soon = np.polyval(deriv, candles.end_time+1/6) / start_price
+        soon = np.polyval(deriv, candles.end_time+1/12) / start_price
         real = candles[-3:].rate / start_price
         gain = (binance.fetch_ticker(coin.symbol)['last'] - start_price) / start_price
         print(cell(f"{percentage(now)}/h"), cell(f"{percentage(real)}/h"), cell(percentage(gain)))
