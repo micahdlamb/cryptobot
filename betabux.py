@@ -142,7 +142,7 @@ def get_best_coins(coins):
         coin.valley_accel = fit[0] * 2 / coin.price
         coin.valley_slope = np.polyval(np.polyder(fit, 1), times[-1]) / coin.price
         coin.valley_error = error[0]*1e4 / coin.price**2
-        coin.valley = coin.valley_accel / (1 + coin.valley_error + abs(max(coin.trend_rate, 1) - coin.valley_slope)*1e2)
+        coin.valley = coin.valley_accel / (1 + coin.valley_error + abs(max(coin.trend_rate, .01) - coin.valley_slope)*1e2)
 
         coin.gain = coin.trend + coin.valley
 
