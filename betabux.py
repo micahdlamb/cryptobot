@@ -61,7 +61,7 @@ def main():
                             coins = get_best_coins(coins)
                             best = coins[0]
 
-                            if best.gain + trend < .035:
+                            if best.gain < .015:
                                 print(f"{best.name} not good enough.  Hold BTC")
                                 time.sleep(5*60)
                                 continue
@@ -133,7 +133,7 @@ def get_best_coins(coins):
         times, prices = candles.prices
         fit, error, *_ = np.polyfit(times, prices, 1, full=True)
         coin.trend_rate  = fit[0] / coin.price
-        coin.trend_error = error[0]*1e3 / coin.price**2
+        coin.trend_error = error[0]*2e3 / coin.price**2
         coin.trend = coin.trend_rate*4 / (1 + coin.trend_error)
 
         candles = Candles(coin.symbol, '3m', limit=20)
@@ -144,7 +144,7 @@ def get_best_coins(coins):
         coin.valley_error = error[0]*1e4 / coin.price**2
         coin.valley = coin.valley_accel / (1 + coin.valley_error + abs(max(coin.trend_rate, .01)/2 - coin.valley_slope)*1e2)
 
-        coin.gain = coin.trend + coin.valley
+        coin.gain = min(coin.trend, coin.valley)
 
         coin.plots["recent"] = times, prices, dict(linestyle='-')
         coin.rate = candles[-3:].rate / coin.price
