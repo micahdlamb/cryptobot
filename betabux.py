@@ -61,7 +61,7 @@ def main():
                             coins = get_best_coins(coins)
                             best = coins[0]
 
-                            if best.gain + trend < .025:
+                            if best.gain + trend < .035:
                                 print(f"{best.name} not good enough.  Hold BTC")
                                 time.sleep(5*60)
                                 continue
@@ -117,7 +117,7 @@ def get_coins():
         times, prices = candles.prices
         coin.zero_time = times[-1]
         coin.plots = {"actual": (times, prices, dict(linestyle='-', marker='o'))}
-        coin.trend = candles[-3:].rate / candles.end_price
+        coin.trend = candles[-2:].rate / candles.end_price
 
     return coins
 
@@ -129,12 +129,12 @@ def get_best_coins(coins):
         coin.price = tickers[coin.symbol]['last']
         # tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price'] / coin.price
 
-        candles = Candles(coin.symbol, '15m', limit=5*4)
+        candles = Candles(coin.symbol, '15m', limit=4*4)
         times, prices = candles.prices
         fit, error, *_ = np.polyfit(times, prices, 1, full=True)
         coin.trend_rate  = fit[0] / coin.price
         coin.trend_error = error[0]*1e3 / coin.price**2
-        coin.trend = coin.trend_rate*2 / (1 + coin.trend_error)
+        coin.trend = coin.trend_rate*4 / (1 + coin.trend_error)
 
         candles = Candles(coin.symbol, '3m', limit=20)
         times, prices = candles.prices
@@ -142,7 +142,7 @@ def get_best_coins(coins):
         coin.valley_accel = fit[0] * 2 / coin.price
         coin.valley_slope = np.polyval(np.polyder(fit, 1), times[-1]) / coin.price
         coin.valley_error = error[0]*1e4 / coin.price**2
-        coin.valley = coin.valley_accel / (1 + coin.valley_error + abs(max(coin.trend_rate, .01) - coin.valley_slope)*1e2)
+        coin.valley = coin.valley_accel / (1 + coin.valley_error + abs(max(coin.trend_rate, .01)/2 - coin.valley_slope)*1e2)
 
         coin.gain = coin.trend + coin.valley
 
@@ -173,7 +173,7 @@ def hold_coin_while_gaining(coin):
     print(cell("y'"), cell("rate"), cell('gain'))
 
     while True:
-        candles = Candles(coin.symbol, '3m', limit=15)
+        candles = Candles(coin.symbol, '3m', limit=20)
         deriv = np.polyder(candles.polyfit(2))
         now  = np.polyval(deriv, candles.end_time)     / start_price
         soon = np.polyval(deriv, candles.end_time+1/12) / start_price
