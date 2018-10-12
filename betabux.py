@@ -61,7 +61,7 @@ def main():
                             coins = get_best_coins(coins)
                             best = coins[0]
 
-                            if best.gain + trend < .025:
+                            if best.gain + trend < .02:
                                 print(f"{best.name} not good enough.  Hold BTC")
                                 time.sleep(5*60)
                                 continue
@@ -129,22 +129,15 @@ def get_best_coins(coins):
         coin.price = tickers[coin.symbol]['last']
         # tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price'] / coin.price
 
-        candles = Candles(coin.symbol, '15m', limit=5*4)[:-4]
-        times, prices = candles.prices
+        candles = Candles(coin.symbol, '5m', limit=4*12)
+        times, prices = candles[6:].prices
         fit, error, *_ = np.polyfit(times, prices, 1, full=True)
-        coin.trend_rate  = fit[0] / coin.price
-        coin.trend_error = error[0]*1e3 / coin.price**2
-        coin.trend = coin.trend_rate*2 / (1 + coin.trend_error)
-
-        candles = Candles(coin.symbol, '3m', limit=20)
-        times, prices = candles.prices
-        fit, error, *_ = np.polyfit(times, prices, 2, full=True)
-        coin.valley_accel = fit[0] * 2 / coin.price
-        coin.valley_slope = np.polyval(np.polyder(fit, 1), times[-1]) / coin.price
-        coin.valley_error = error[0]*1e4 / coin.price**2
-        coin.valley = coin.valley_accel / (1 + coin.valley_error + abs(max(coin.trend_rate, 1) - coin.valley_slope)*1e2)
-
-        coin.gain = coin.trend + coin.valley
+        coin.rate  = fit[0] / coin.price
+        coin.error = error[0]*1e3 / coin.price**2
+        tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price'] / coin.price
+        coin.flat  = 1 / (1 + abs(coin.rate)*1e2 + coin.error + tick_size)
+        coin.spike = candles[:6].delta / coin.price
+        coin.gain  = coin.flat * clamp(coin.spike, -4, 4)
 
         coin.plots["recent"] = times, prices, dict(linestyle='-')
         coin.rate = candles[-3:].rate / coin.price
@@ -154,12 +147,9 @@ def get_best_coins(coins):
     col  = lambda s: s.ljust(6)
     rcol = lambda n: str(round(n, 1)).ljust(6)
     pcol = lambda n: percentage(n).ljust(6)
-    print(col(''), col('gain'), col('trend'), col('valley'), col('trate'), col('terr'), col("y''"), col("y'"), col('verr'), col('rt'))
+    print(col(''), col('gain'), col('flat'), col('spike'), col('rate'), col('error'))
     for coin in coins[:10]:
-        print(col(coin.name), pcol(coin.gain), pcol(coin.trend), pcol(coin.valley),
-                              pcol(coin.trend_rate), rcol(coin.trend_error),
-                              pcol(coin.valley_accel), pcol(coin.valley_slope), rcol(coin.valley_error),
-                              pcol(coin.rate))
+        print(col(coin.name), pcol(coin.gain), rcol(coin.flat), pcol(coin.spike), pcol(coin.rate), rcol(coin.error))
 
     return coins
 
@@ -173,7 +163,7 @@ def hold_coin_while_gaining(coin):
     print(cell("y'"), cell("rate"), cell('gain'))
 
     while True:
-        candles = Candles(coin.symbol, '3m', limit=15)
+        candles = Candles(coin.symbol, '3m', limit=10)
         deriv = np.polyder(candles.polyfit(2))
         now  = np.polyval(deriv, candles.end_time)     / start_price
         soon = np.polyval(deriv, candles.end_time+1/12) / start_price
@@ -191,7 +181,7 @@ def hold_coin_while_gaining(coin):
             time.sleep(5*60)
 
     elapsed_time = time.time() - start_time
-    candles = Candles(coin.symbol, '5m', limit=math.ceil(elapsed_time / 60 / 5))
+    candles = Candles(coin.symbol, '5m', limit=max(2, math.ceil(elapsed_time/60/5)))
     coin.plots['holding'] = *candles.prices, dict(linestyle='-')
 
 
