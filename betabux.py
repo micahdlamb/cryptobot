@@ -61,7 +61,7 @@ def main():
                             coins = get_best_coins(coins)
                             best = coins[0]
 
-                            if best.gain + trend < .02:
+                            if best.gain + trend < .015:
                                 print(f"{best.name} not good enough.  Hold BTC")
                                 time.sleep(5*60)
                                 continue
@@ -130,17 +130,17 @@ def get_best_coins(coins):
         # tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price'] / coin.price
 
         candles = Candles(coin.symbol, '5m', limit=4*12)
-        times, prices = candles[6:].prices
+        times, prices = candles[:-3].prices
         fit, error, *_ = np.polyfit(times, prices, 1, full=True)
         coin.rate  = fit[0] / coin.price
         coin.error = error[0]*1e3 / coin.price**2
         tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price'] / coin.price
-        coin.flat  = 1 / (1 + abs(coin.rate)*1e2 + coin.error + tick_size)
-        coin.spike = candles[:6].delta / coin.price
+        coin.flat  = 1 / (1 + abs(coin.rate)*1e2 + coin.error + tick_size*1e2)
+        coin.spike = (coin.price*3 - candles.max*2 - np.average(prices)) / coin.price
         coin.gain  = coin.flat * clamp(coin.spike, -4, 4)
 
         coin.plots["recent"] = times, prices, dict(linestyle='-')
-        coin.rate = candles[-3:].rate / coin.price
+        #coin.dy_dx = candles[-3:].rate / coin.price
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
 
@@ -163,7 +163,7 @@ def hold_coin_while_gaining(coin):
     print(cell("y'"), cell("rate"), cell('gain'))
 
     while True:
-        candles = Candles(coin.symbol, '3m', limit=10)
+        candles = Candles(coin.symbol, '1m', limit=15)
         deriv = np.polyder(candles.polyfit(2))
         now  = np.polyval(deriv, candles.end_time)     / start_price
         soon = np.polyval(deriv, candles.end_time+1/12) / start_price
@@ -178,7 +178,7 @@ def hold_coin_while_gaining(coin):
             except TimeoutError as err:
                 print(err)
         else:
-            time.sleep(5*60)
+            time.sleep(2*60)
 
     elapsed_time = time.time() - start_time
     candles = Candles(coin.symbol, '5m', limit=max(2, math.ceil(elapsed_time/60/5)))
