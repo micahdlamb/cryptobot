@@ -61,7 +61,7 @@ def main():
                             coins = get_best_coins(coins)
                             best = coins[0]
 
-                            if best.gain < .01:
+                            if best.gain < .0065:
                                 print(f"{best.name} not good enough.  Hold BTC")
                                 time.sleep(5*60)
                                 continue
@@ -210,13 +210,13 @@ def trade_coin(from_coin, to_coin, max_change=None):
         avg_price = np.average([bid_price, ask_price])
 
         holding_amount = binance.fetch_balance()[from_coin]['free']
-        rate = Candles(symbol, '1m', limit=10).rate
+        rate = Candles(symbol, '1m', limit=5).rate
 
         if side == 'buy':
-            price  = round_price_down(symbol, min(ask_price*1.002, bid_price + rate/12))
+            price  = round_price_down(symbol, min(ask_price*1.002, bid_price + rate/20))
             amount = binance.amount_to_lots(symbol, holding_amount / price)
         else:
-            price  = round_price_up  (symbol, max(bid_price*.998, ask_price + rate/12))
+            price  = round_price_up  (symbol, max(bid_price*.998, ask_price + rate/20))
             amount = holding_amount
 
         if max_change:
