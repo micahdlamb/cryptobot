@@ -61,7 +61,7 @@ def main():
                             coins = get_best_coins(coins)
                             best = coins[0]
 
-                            if best.gain < .002:
+                            if best.gain < .001:
                                 print(f"{best.name} not good enough.  Hold BTC")
                                 time.sleep(2*60)
                                 continue
@@ -127,17 +127,17 @@ def get_best_coins(coins):
     tickers = binance.fetch_tickers()
     for coin in coins:
         #coin.price = tickers[coin.symbol]['last']
-        candles = Candles(coin.symbol, '1m', limit=2*60)
+        candles = Candles(coin.symbol, '1m', limit=1*60)
         coin.price = candles.end_price
-        times, prices = candles[:-10].prices
+        times, prices = candles[:-5].prices
         fit, error, *_ = np.polyfit(times, prices, 1, full=True)
         coin.rate  = fit[0] / coin.price
         coin.error = error[0]*4e3 / coin.price**2
         tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price'] / coin.price
         coin.flat  = 1 / (1 + abs(coin.rate)*4e2 + coin.error + tick_size*1e2)
-        coin.max_jump = max(abs(candle[2]-candle[3]) for candle in candles[-10:]) / coin.price
+        coin.max_jump = max(abs(candle[2]-candle[3]) for candle in candles[-5:]) / coin.price
         coin.spike = (coin.price*4 - candles.max*3 - np.average(prices)) / coin.price - coin.max_jump
-        coin.gain  = coin.flat * clamp(coin.spike, -2, 2)
+        coin.gain  = coin.flat * clamp(coin.spike, -1, 1)
 
         coin.plots["recent"] = *candles.prices, dict(linestyle='-')
         #coin.dy_dx = candles[-3:].rate / coin.price
