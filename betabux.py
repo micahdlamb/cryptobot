@@ -72,7 +72,7 @@ def main():
                                 continue
 
                             try:
-                                filled_order = trade_coin('BTC', best.name, max_change=(best.price, .01))
+                                filled_order = trade_coin('BTC', best.name, max_change=(best.price, .015))
                                 hodl = best
                                 break
                             except TimeoutError as error:
@@ -126,17 +126,17 @@ def get_best_coins(coins):
     print('Looking for best coins...')
     tickers = binance.fetch_tickers()
     for coin in coins:
-        coin.price = tickers[coin.symbol]['last']
-        # tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price'] / coin.price
-
-        candles = Candles(coin.symbol, '5m', limit=4*12)
-        times, prices = candles[:-3].prices
+        #coin.price = tickers[coin.symbol]['last']
+        candles = Candles(coin.symbol, '3m', limit=2*20)
+        coin.price = candles.end_price
+        times, prices = candles[:-5].prices
         fit, error, *_ = np.polyfit(times, prices, 1, full=True)
         coin.rate  = fit[0] / coin.price
         coin.error = error[0]*1e3 / coin.price**2
         tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price'] / coin.price
         coin.flat  = 1 / (1 + abs(coin.rate)*1e2 + coin.error + tick_size*1e2)
-        coin.spike = (coin.price*3 - candles.max*2 - np.average(prices)) / coin.price
+        max_jump = max(abs(candle[2]-candle[3]) for candle in candles[-5:])
+        coin.spike = (coin.price*3 - candles.max*2 - np.average(prices) - max_jump) / coin.price
         coin.gain  = coin.flat * clamp(coin.spike, -4, 4)
 
         coin.plots["recent"] = times, prices, dict(linestyle='-')
@@ -209,12 +209,6 @@ def trade_coin(from_coin, to_coin, max_change=None):
         ask_price = book['asks'][0][0]
         avg_price = np.average([bid_price, ask_price])
 
-        if max_change:
-            start_price, change = max_change
-            bad_change   = -good_direction * (avg_price - start_price) / start_price
-            if bad_change > change:
-                raise TimeoutError(f"{side} of {symbol} aborted due to price change of {percentage(bad_change)}")
-
         holding_amount = binance.fetch_balance()[from_coin]['free']
         rate = Candles(symbol, '1m', limit=10).rate
 
@@ -224,6 +218,12 @@ def trade_coin(from_coin, to_coin, max_change=None):
         else:
             price  = round_price_up  (symbol, max(bid_price*.998, ask_price + rate/12))
             amount = holding_amount
+
+        if max_change:
+            start_price, allowed_change = max_change
+            change = (price - start_price) / start_price
+            if abs(change) > allowed_change:
+                raise TimeoutError(f"{side} of {symbol} aborted due to price change of {percentage(change)}")
 
         m1x    = unmix(price, bid_price, ask_price)
         spread = (ask_price - bid_price) / avg_price
