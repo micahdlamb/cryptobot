@@ -136,7 +136,7 @@ def get_best_coins(coins):
         tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price'] / coin.price
         coin.flat  = 1 / (1 + abs(coin.rate)*4e2 + coin.error + tick_size*1e2)
         coin.max_jump = max(abs(candle[2]-candle[3]) for candle in candles[-5:]) / coin.price
-        coin.spike = (coin.price*4 - candles.max*3 - np.average(prices)) / coin.price - coin.max_jump
+        coin.spike = (coin.price*4 - candles.max*3 - max(prices)) / coin.price - coin.max_jump
         coin.gain  = coin.flat * clamp(coin.spike, -1, 1)
 
         coin.plots["recent"] = *candles.prices, dict(linestyle='-')
