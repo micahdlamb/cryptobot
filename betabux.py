@@ -61,7 +61,7 @@ def main():
                             coins = get_best_coins(coins)
                             best = coins[0]
 
-                            if best.gain < .0065:
+                            if best.gain < .005:
                                 print(f"{best.name} not good enough.  Hold BTC")
                                 time.sleep(5*60)
                                 continue
@@ -105,8 +105,8 @@ def get_coins():
     class Coin(collections.namedtuple("Coin", "name symbol")): pass
     coins = []
     for symbol in get_symbols():
-        candles = Candles(symbol, '15m', limit=4*4)
-        if len(candles) < 4*4:
+        candles = Candles(symbol, '15m', limit=3*4)
+        if len(candles) < 3*4:
             print(f"Skipping {symbol} for missing data. len(ohlcv)={len(candles)}")
             continue
 
@@ -129,14 +129,14 @@ def get_best_coins(coins):
         #coin.price = tickers[coin.symbol]['last']
         candles = Candles(coin.symbol, '3m', limit=3*20)
         coin.price = candles.end_price
-        times, prices = candles[:-5].prices
+        times, prices = candles[:-10].prices
         fit, error, *_ = np.polyfit(times, prices, 1, full=True)
         coin.rate  = fit[0] / coin.price
         coin.error = error[0]*2e3 / coin.price**2
         tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price'] / coin.price
-        coin.flat  = 1 / (1 + abs(coin.rate)*1e2 + coin.error + tick_size*1e2)
-        coin.max_jump = max(abs(candle[2]-candle[3]) for candle in candles[-5:]) / coin.price
-        coin.spike = (coin.price*3 - candles.max*2 - np.average(prices)) / coin.price - coin.max_jump
+        coin.flat  = 1 / (1 + abs(coin.rate)*2e2 + coin.error + tick_size*1e2)
+        coin.max_jump = max(abs(candle[2]-candle[3]) for candle in candles[-10:]) / coin.price
+        coin.spike = (coin.price*4 - candles.max*3 - np.average(prices)) / coin.price - coin.max_jump
         coin.gain  = coin.flat * clamp(coin.spike, -4, 4)
 
         coin.plots["recent"] = *candles.prices, dict(linestyle='-')
@@ -163,7 +163,7 @@ def hold_coin_while_gaining(coin):
     print(cell("y'"), cell("rate"), cell('gain'))
 
     while True:
-        candles = Candles(coin.symbol, '1m', limit=15)
+        candles = Candles(coin.symbol, '1m', limit=30)
         deriv = np.polyder(candles.polyfit(2))
         now  = np.polyval(deriv, candles.end_time)     / start_price
         soon = np.polyval(deriv, candles.end_time+1/12) / start_price
