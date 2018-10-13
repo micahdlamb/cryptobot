@@ -61,7 +61,7 @@ def main():
                             coins = get_best_coins(coins)
                             best = coins[0]
 
-                            if best.gain + trend < .01:
+                            if best.gain < .01:
                                 print(f"{best.name} not good enough.  Hold BTC")
                                 time.sleep(5*60)
                                 continue
@@ -105,8 +105,8 @@ def get_coins():
     class Coin(collections.namedtuple("Coin", "name symbol")): pass
     coins = []
     for symbol in get_symbols():
-        candles = Candles(symbol, '1h', limit=12)
-        if len(candles) < 8:
+        candles = Candles(symbol, '15m', limit=4*4)
+        if len(candles) < 4*4:
             print(f"Skipping {symbol} for missing data. len(ohlcv)={len(candles)}")
             continue
 
@@ -117,7 +117,7 @@ def get_coins():
         times, prices = candles.prices
         coin.zero_time = times[-1]
         coin.plots = {"actual": (times, prices, dict(linestyle='-', marker='o'))}
-        coin.trend = candles[-3:].rate / candles.end_price
+        coin.trend = candles[-2*4:].rate / candles.end_price
 
     return coins
 
@@ -127,19 +127,19 @@ def get_best_coins(coins):
     tickers = binance.fetch_tickers()
     for coin in coins:
         #coin.price = tickers[coin.symbol]['last']
-        candles = Candles(coin.symbol, '3m', limit=2*20)
+        candles = Candles(coin.symbol, '3m', limit=3*20)
         coin.price = candles.end_price
         times, prices = candles[:-5].prices
         fit, error, *_ = np.polyfit(times, prices, 1, full=True)
         coin.rate  = fit[0] / coin.price
-        coin.error = error[0]*1e3 / coin.price**2
+        coin.error = error[0]*2e3 / coin.price**2
         tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price'] / coin.price
         coin.flat  = 1 / (1 + abs(coin.rate)*1e2 + coin.error + tick_size*1e2)
-        max_jump = max(abs(candle[2]-candle[3]) for candle in candles[-5:])
-        coin.spike = (coin.price*3 - candles.max*2 - np.average(prices) - max_jump) / coin.price
+        coin.max_jump = max(abs(candle[2]-candle[3]) for candle in candles[-5:]) / coin.price
+        coin.spike = (coin.price*3 - candles.max*2 - np.average(prices)) / coin.price - coin.max_jump
         coin.gain  = coin.flat * clamp(coin.spike, -4, 4)
 
-        coin.plots["recent"] = times, prices, dict(linestyle='-')
+        coin.plots["recent"] = *candles.prices, dict(linestyle='-')
         #coin.dy_dx = candles[-3:].rate / coin.price
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
@@ -147,9 +147,9 @@ def get_best_coins(coins):
     col  = lambda s: s.ljust(6)
     rcol = lambda n: str(round(n, 1)).ljust(6)
     pcol = lambda n: percentage(n).ljust(6)
-    print(col(''), col('gain'), col('flat'), col('spike'), col('rate'), col('error'))
+    print(col(''), col('gain'), col('flat'), col('spike'), col('jump'), col('rate'), col('error'))
     for coin in coins[:10]:
-        print(col(coin.name), pcol(coin.gain), rcol(coin.flat), pcol(coin.spike), pcol(coin.rate), rcol(coin.error))
+        print(col(coin.name), pcol(coin.gain), rcol(coin.flat), pcol(coin.spike), pcol(coin.max_jump), pcol(coin.rate), rcol(coin.error))
 
     return coins
 
@@ -181,7 +181,7 @@ def hold_coin_while_gaining(coin):
             time.sleep(2*60)
 
     elapsed_time = time.time() - start_time
-    candles = Candles(coin.symbol, '5m', limit=max(2, math.ceil(elapsed_time/60/5)))
+    candles = Candles(coin.symbol, '1m', limit=max(2, math.ceil(elapsed_time/60/1)))
     coin.plots['holding'] = *candles.prices, dict(linestyle='-')
 
 
@@ -323,8 +323,10 @@ class Candles(list):
     @property
     def prices(self):
         prices = [np.average(candle[2:4]) for candle in self]
-        to_center = (self[-1][0] - self[-2][0]) / 2
-        times = [(candle[0] + to_center) / milli_seconds_in_hour for candle in self]
+        to_center = (self[-1][0] - self[-2][0]) / 2 / milli_seconds_in_hour
+        times = [candle[0] / milli_seconds_in_hour + to_center for candle in self]
+        times.append(times[-1]+to_center)
+        prices.append(self[-1][-2])
         return times, prices
 
     def polyfit(self, deg):
