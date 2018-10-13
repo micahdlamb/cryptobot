@@ -165,7 +165,7 @@ def hold_coin_while_gaining(coin):
     while True:
         candles = Candles(coin.symbol, '1m', limit=10)
         deriv = np.polyder(candles.polyfit(2))
-        now  = np.polyval(deriv, candles.end_time)     / start_price
+        now  = np.polyval(deriv, candles.end_time)      / start_price
         soon = np.polyval(deriv, candles.end_time+1/20) / start_price
         real = candles[-3:].rate / start_price
         gain = (binance.fetch_ticker(coin.symbol)['last'] - start_price) / start_price
@@ -241,7 +241,7 @@ def trade_coin(from_coin, to_coin, max_change=None):
     raise TimeoutError(f"{side} of {symbol} didn't get filled")
 
 
-def create_order_and_wait(symbol, side, amount, price, type='limit', timeout=5, poll=1):
+def create_order_and_wait(symbol, side, amount, price, type='limit', timeout=1, poll=1):
     order = binance.create_order(symbol, type, side, amount, price)
     del order['info']
     print(order)
