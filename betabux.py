@@ -61,9 +61,9 @@ def main():
                             coins = get_best_coins(coins)
                             best = coins[0]
 
-                            if best.gain < .005:
+                            if best.gain < .002:
                                 print(f"{best.name} not good enough.  Hold BTC")
-                                time.sleep(5*60)
+                                time.sleep(2*60)
                                 continue
 
                             if best is btc:
@@ -105,8 +105,8 @@ def get_coins():
     class Coin(collections.namedtuple("Coin", "name symbol")): pass
     coins = []
     for symbol in get_symbols():
-        candles = Candles(symbol, '15m', limit=3*4)
-        if len(candles) < 3*4:
+        candles = Candles(symbol, '15m', limit=2*4)
+        if len(candles) < 2*4:
             print(f"Skipping {symbol} for missing data. len(ohlcv)={len(candles)}")
             continue
 
@@ -127,17 +127,17 @@ def get_best_coins(coins):
     tickers = binance.fetch_tickers()
     for coin in coins:
         #coin.price = tickers[coin.symbol]['last']
-        candles = Candles(coin.symbol, '3m', limit=3*20)
+        candles = Candles(coin.symbol, '1m', limit=2*60)
         coin.price = candles.end_price
         times, prices = candles[:-10].prices
         fit, error, *_ = np.polyfit(times, prices, 1, full=True)
         coin.rate  = fit[0] / coin.price
-        coin.error = error[0]*2e3 / coin.price**2
+        coin.error = error[0]*4e3 / coin.price**2
         tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price'] / coin.price
-        coin.flat  = 1 / (1 + abs(coin.rate)*2e2 + coin.error + tick_size*1e2)
+        coin.flat  = 1 / (1 + abs(coin.rate)*4e2 + coin.error + tick_size*1e2)
         coin.max_jump = max(abs(candle[2]-candle[3]) for candle in candles[-10:]) / coin.price
         coin.spike = (coin.price*4 - candles.max*3 - np.average(prices)) / coin.price - coin.max_jump
-        coin.gain  = coin.flat * clamp(coin.spike, -4, 4)
+        coin.gain  = coin.flat * clamp(coin.spike, -2, 2)
 
         coin.plots["recent"] = *candles.prices, dict(linestyle='-')
         #coin.dy_dx = candles[-3:].rate / coin.price
@@ -163,10 +163,10 @@ def hold_coin_while_gaining(coin):
     print(cell("y'"), cell("rate"), cell('gain'))
 
     while True:
-        candles = Candles(coin.symbol, '1m', limit=30)
+        candles = Candles(coin.symbol, '1m', limit=10)
         deriv = np.polyder(candles.polyfit(2))
         now  = np.polyval(deriv, candles.end_time)     / start_price
-        soon = np.polyval(deriv, candles.end_time+1/12) / start_price
+        soon = np.polyval(deriv, candles.end_time+1/20) / start_price
         real = candles[-3:].rate / start_price
         gain = (binance.fetch_ticker(coin.symbol)['last'] - start_price) / start_price
         print(cell(f"{percentage(now)}/h"), cell(f"{percentage(real)}/h"), cell(percentage(gain)))
@@ -178,7 +178,7 @@ def hold_coin_while_gaining(coin):
             except TimeoutError as err:
                 print(err)
         else:
-            time.sleep(2*60)
+            time.sleep(1*60)
 
     elapsed_time = time.time() - start_time
     candles = Candles(coin.symbol, '1m', limit=max(2, math.ceil(elapsed_time/60/1)))
