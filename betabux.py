@@ -36,12 +36,17 @@ def main():
         start_time = time.time()
         try:
             with io.StringIO() as log, contextlib.redirect_stdout(Tee(log, sys.stdout)):
+                holding = get_holding_coin()
                 tickers = binance.fetch_tickers()
+                ignore = {'HOT', 'DENT'}
+                symbols = ['BTC/USDT'] + [symbol for symbol, market in binance.markets.items()
+                                          if market['active'] and market['quote'] == 'BTC' and market['base'] not in ignore
+                                          and (market['base'] == holding.name or tickers[symbol]['quoteVolume'] > 50)]
+
                 market_delta = np.average([v['percentage'] for k, v in tickers.items() if k.endswith('/BTC')])
                 print(f"24 hour alt coin change: {market_delta}%")
 
-                coins = get_coins()
-                holding = get_holding_coin()
+                coins = get_coins(symbols)
                 hodl = next(c for c in coins if c.name == holding.name)
                 btc  = next(c for c in coins if c.name == 'BTC')
                 tusd = next(c for c in coins if c.name == 'TUSD')
@@ -100,13 +105,13 @@ def main():
         print('-'*30 + '\n')
 
 
-def get_coins():
+def get_coins(symbols):
     print('Getting coins...')
     class Coin(collections.namedtuple("Coin", "name symbol")): pass
     coins = []
-    for symbol in get_symbols():
-        candles = Candles(symbol, '15m', limit=2*4)
-        if len(candles) < 2*4:
+    for symbol in symbols:
+        candles = Candles(symbol, '15m', limit=1*4)
+        if len(candles) < 1*4:
             print(f"Skipping {symbol} for missing data. len(ohlcv)={len(candles)}")
             continue
 
@@ -117,7 +122,7 @@ def get_coins():
         times, prices = candles.prices
         coin.zero_time = times[-1]
         coin.plots = {"actual": (times, prices, dict(linestyle='-', marker='o'))}
-        coin.trend = candles[-2*4:].rate / candles.end_price
+        coin.trend = candles[-1*4:].rate / candles.end_price
 
     return coins
 
@@ -374,11 +379,6 @@ class Candles(list):
             list.__init__(items, super().__getitem__(item))
             return items
         return super().__getitem__(item)
-
-
-def get_symbols():
-    return ['BTC/USDT'] + [symbol for symbol, market in binance.markets.items()
-                           if market['active'] and symbol.endswith('/BTC')]
 
 
 def get_balance():
