@@ -153,7 +153,7 @@ def get_best_coins(coins):
     rcol = lambda n: str(round(n, 1)).ljust(6)
     pcol = lambda n: percentage(n).ljust(6)
     print(col(''), col('gain'), col('flat'), col('spike'), col('jump'), col('rate'), col('error'))
-    for coin in coins[:10]:
+    for coin in coins[:5]:
         print(col(coin.name), pcol(coin.gain), rcol(coin.flat), pcol(coin.spike), pcol(coin.max_jump), pcol(coin.rate), rcol(coin.error))
 
     return coins
