@@ -138,10 +138,10 @@ def get_best_coins(coins):
         fit, error, *_ = np.polyfit(times, prices, 1, full=True)
         coin.rate  = fit[0] / coin.price
         coin.error = error[0]*4e3 / coin.price**2
-        tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price'] / coin.price
-        coin.flat  = 1 / (1 + abs(coin.rate)*1e2 + coin.error + tick_size*1e2)
+        coin.flat  = 1 / (1 + abs(coin.rate)*1e2 + coin.error)
         coin.max_jump = max(abs(candle[2]-candle[3]) for candle in candles[-5:]) / coin.price
-        coin.spike = (coin.price*4 - candles.max*3 - max(prices)) / coin.price - coin.max_jump
+        tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price']
+        coin.spike = (coin.price*4 - candles.max*3 - max(prices) - tick_size) / coin.price - coin.max_jump
         coin.gain  = coin.flat * clamp(coin.spike, -1, 1)
 
         coin.plots["recent"] = *candles.prices, dict(linestyle='-')
