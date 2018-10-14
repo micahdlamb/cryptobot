@@ -149,18 +149,19 @@ def get_best_coins(coins):
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
 
-    col  = lambda s: s.ljust(6)
-    rcol = lambda n: str(round(n, 1)).ljust(6)
+    col  = lambda s,w=6: s.ljust(w)
+    rcol = lambda n,w=6: str(round(n, 2)).ljust(w)
     pcol = lambda n: percentage(n).ljust(6)
-    print(col(''), col('gain'), col('flat'), col('spike'), col('jump'), col('rate'), col('error'))
+    print(col(''), col('gain'), col('flat',4), col('spike'), col('jump'), col('rate'), col('error'))
     for coin in coins[:5]:
-        print(col(coin.name), pcol(coin.gain), rcol(coin.flat), pcol(coin.spike), pcol(coin.max_jump), pcol(coin.rate), rcol(coin.error))
+        print(col(coin.name), pcol(coin.gain), rcol(coin.flat,4), pcol(coin.spike), pcol(coin.max_jump), pcol(coin.rate), rcol(coin.error))
 
     return coins
 
 
 def hold_coin_while_gaining(coin):
     print(f"====== Holding {coin.name} ======")
+    holding_amount = binance.fetch_balance()[coin.name]['free']
     start_price = binance.fetch_ticker(coin.symbol)['last']
     start_time  = time.time()
 
@@ -177,20 +178,16 @@ def hold_coin_while_gaining(coin):
         print(cell(f"{percentage(now)}/h"), cell(f"{percentage(real)}/h"), cell(percentage(gain)))
 
         if real < 0 and soon < 0:
-            try:
-                trade_coin(coin.name, 'BTC')
-                break
-            except TimeoutError as err:
-                print(err)
+            order = binance.create_market_sell_order(coin.symbol, holding_amount)
+            record_order(order)
+            print(order)
+            break
         else:
             time.sleep(1*60)
 
     elapsed_time = time.time() - start_time
     candles = Candles(coin.symbol, '1m', limit=max(2, math.ceil(elapsed_time/60/1)))
     coin.plots['holding'] = *candles.prices, dict(linestyle='-')
-
-
-trade_log = []
 
 
 def trade_coin(from_coin, to_coin, max_change=None):
@@ -246,8 +243,8 @@ def trade_coin(from_coin, to_coin, max_change=None):
     raise TimeoutError(f"{side} of {symbol} didn't get filled")
 
 
-def create_order_and_wait(symbol, side, amount, price, type='limit', timeout=1, poll=1):
-    order = binance.create_order(symbol, type, side, amount, price)
+def create_order_and_wait(symbol, side, amount, price, timeout=1, poll=1):
+    order = binance.create_order(symbol, 'limit', side, amount, price)
     del order['info']
     print(order)
 
@@ -257,15 +254,20 @@ def create_order_and_wait(symbol, side, amount, price, type='limit', timeout=1, 
         order = binance.fetch_order(id, symbol=symbol)
         print(f"{order['filled']} / {order['amount']} filled")
         if order['status'] == 'closed':
-            from datetime import datetime
-            order['fill_time'] = datetime.now().timestamp() / 3600
-            trade_log.append(order)
-            print('')
+            record_order(order)
             return order
 
     print(f"Cancelling order {id} {symbol}")
     binance.cancel_order(id, symbol=symbol)
     return order
+
+
+trade_log = []
+
+def record_order(order):
+    from datetime import datetime
+    order['fill_time'] = datetime.now().timestamp() / 3600
+    trade_log.append(order)
 
 
 def email_myself_plots(subject, start_balance, coins, log):
