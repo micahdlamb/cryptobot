@@ -38,10 +38,10 @@ def main():
             with io.StringIO() as log, contextlib.redirect_stdout(Tee(log, sys.stdout)):
                 holding = get_holding_coin()
                 tickers = binance.fetch_tickers()
-                ignore = {'HOT', 'DENT'}
+                ignore = {'HOT', 'DENT', 'NPXS'}
                 symbols = ['BTC/USDT'] + [symbol for symbol, market in binance.markets.items()
                                           if market['active'] and market['quote'] == 'BTC' and market['base'] not in ignore
-                                          and (market['base'] == holding.name or tickers[symbol]['quoteVolume'] > 50)]
+                                          and (market['base'] == holding.name or tickers[symbol]['quoteVolume'] > 100)]
 
                 market_delta = np.average([v['percentage'] for k, v in tickers.items() if k.endswith('/BTC')])
                 print(f"24 hour alt coin change: {market_delta}%")
@@ -139,7 +139,7 @@ def get_best_coins(coins):
         coin.rate  = fit[0] / coin.price
         coin.error = error[0]*4e3 / coin.price**2
         tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price'] / coin.price
-        coin.flat  = 1 / (1 + abs(coin.rate)*4e2 + coin.error + tick_size*1e2)
+        coin.flat  = 1 / (1 + abs(coin.rate)*1e2 + coin.error + tick_size*1e2)
         coin.max_jump = max(abs(candle[2]-candle[3]) for candle in candles[-5:]) / coin.price
         coin.spike = (coin.price*4 - candles.max*3 - max(prices)) / coin.price - coin.max_jump
         coin.gain  = coin.flat * clamp(coin.spike, -1, 1)
