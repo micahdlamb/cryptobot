@@ -76,12 +76,17 @@ def main():
                                 time.sleep(30)
                                 continue
 
+                            market_buy(best.symbol)
+                            hodl = best
+                            break
+                            '''
                             try:
                                 filled_order = trade_coin('BTC', best.name, max_change=(best.price, .015))
                                 hodl = best
                                 break
                             except TimeoutError as error:
                                 print(error)
+                            '''
 
                     result += f"{hodl.name} -> BTC"
                     hold_coin_while_gaining(hodl)
@@ -138,7 +143,7 @@ def get_best_coins(coins):
         fit, error, *_ = np.polyfit(times, prices, 1, full=True)
         coin.rate  = fit[0] / coin.price
         coin.error = error[0]*4e3 / coin.price**2
-        coin.flat  = 1 / (1 + abs(coin.rate)*1e2 + coin.error)
+        coin.flat  = 1 / (1 + abs(coin.rate)*4e2 + coin.error)
         coin.max_jump = max(abs(candle[2]-candle[3]) for candle in candles[-5:]) / coin.price
         tick_size = 10 ** -binance.markets[coin.symbol]['precision']['price']
         coin.spike = (coin.price*4 - candles.max*3 - max(prices) - tick_size) / coin.price - coin.max_jump
@@ -178,9 +183,7 @@ def hold_coin_while_gaining(coin):
         print(cell(f"{percentage(now)}/h"), cell(f"{percentage(real)}/h"), cell(percentage(gain)))
 
         if real < 0 and soon < 0:
-            order = binance.create_market_sell_order(coin.symbol, holding_amount)
-            record_order(order)
-            print(order)
+            market_sell(coin.symbol, holding_amount)
             break
         else:
             time.sleep(1*60)
@@ -188,6 +191,33 @@ def hold_coin_while_gaining(coin):
     elapsed_time = time.time() - start_time
     candles = Candles(coin.symbol, '1m', limit=max(2, math.ceil(elapsed_time/60/1)))
     coin.plots['holding'] = *candles.prices, dict(linestyle='-')
+
+
+def market_buy(symbol, fraction_of_btc=.95):
+    price = binance.fetch_ticker(symbol)['last']
+    free_btc = binance.fetch_balance()['BTC']['free']
+    amount = binance.amount_to_lots(symbol, free_btc * fraction_of_btc / price)
+    order = binance.create_market_buy_order(symbol, amount)
+    _record_order(order)
+    print(f"Bought {order['filled']} {symbol} at {order['price']}")
+    return order
+
+
+def market_sell(symbol, amount):
+    order = binance.create_market_sell_order(symbol, amount)
+    _record_order(order)
+    print(f"Sold {order['filled']} {symbol} at {order['price']}")
+    return order
+
+
+trade_log = []
+
+
+def _record_order(order):
+    order['fill_time'] = order['timestamp'] / milli_seconds_in_hour
+    btc = sum(fill['price'] * fill['qty'] for fill in order['info']['fills'])
+    order['price'] = btc / order['filled']
+    trade_log.append(order)
 
 
 def trade_coin(from_coin, to_coin, max_change=None):
@@ -254,20 +284,15 @@ def create_order_and_wait(symbol, side, amount, price, timeout=1, poll=1):
         order = binance.fetch_order(id, symbol=symbol)
         print(f"{order['filled']} / {order['amount']} filled")
         if order['status'] == 'closed':
-            record_order(order)
+            from datetime import datetime
+            order['fill_time'] = datetime.now().timestamp() / 3600
+            trade_log.append(order)
+            print('')
             return order
 
     print(f"Cancelling order {id} {symbol}")
     binance.cancel_order(id, symbol=symbol)
     return order
-
-
-trade_log = []
-
-def record_order(order):
-    from datetime import datetime
-    order['fill_time'] = datetime.now().timestamp() / 3600
-    trade_log.append(order)
 
 
 def email_myself_plots(subject, start_balance, coins, log):
