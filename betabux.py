@@ -67,7 +67,7 @@ def main():
                             best = coins[0]
 
                             if best.gain < .001:
-                                print(f"{best.name} not good enough.  Hold BTC")
+                                print(f"{best.name} not good enough")
                                 time.sleep(2*60)
                                 continue
 
@@ -215,7 +215,7 @@ trade_log = []
 
 def _record_order(order):
     order['fill_time'] = order['timestamp'] / milli_seconds_in_hour
-    btc = sum(fill['price'] * fill['qty'] for fill in order['info']['fills'])
+    btc = sum(float(fill['price']) * float(fill['qty']) for fill in order['info']['fills'])
     order['price'] = btc / order['filled']
     trade_log.append(order)
 
