@@ -68,7 +68,7 @@ def main():
 
                             if best.gain < .001:
                                 print(f"{best.name} not good enough")
-                                time.sleep(2*60)
+                                time.sleep(5*60)
                                 continue
 
                             if best is btc:
@@ -137,8 +137,8 @@ def get_best_coins(coins):
     #tickers = binance.fetch_tickers()
     for coin in coins:
         #coin.price = tickers[coin.symbol]['last']
-        flat_candles  = Candles(coin.symbol, '5m', limit=2*12)[:-1]
-        spike_candles = Candles(coin.symbol, '1m', limit=5)
+        flat_candles  = Candles(coin.symbol, '5m', limit=2*12)[:-2]
+        spike_candles = Candles(coin.symbol, '1m', limit=10)
         coin.price = spike_candles.end_price
 
         times, prices = flat_candles.prices
@@ -190,7 +190,7 @@ def hold_coin_while_gaining(coin):
             market_sell(coin.symbol, holding_amount)
             break
         else:
-            time.sleep(1*60)
+            time.sleep(3*60)
 
     elapsed_time = time.time() - start_time
     candles = Candles(coin.symbol, '1m', limit=max(2, math.ceil(elapsed_time/60/1)))
