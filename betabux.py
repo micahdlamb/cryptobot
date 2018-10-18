@@ -149,9 +149,9 @@ def get_best_coins(coins):
 
         max_price = max(flat_candles.max, spike_candles.max)
         coin.max_jump = max(abs(candle[2]-candle[3]) for candle in spike_candles) / coin.price
-        coin.spike = (coin.price*3 - max_price*2 - flat_candles.max) / coin.price - coin.max_jump
+        coin.spike = (coin.price*2 - max_price*1 - flat_candles.max) / coin.price - coin.max_jump
 
-        coin.gain  = coin.flat * clamp(coin.spike, -1, 1)
+        coin.gain  = coin.flat * clamp(coin.spike, -.01, .01)
 
         coin.plots["flat"]  = *flat_candles.prices,  dict(linestyle='-')
         coin.plots["spike"] = *spike_candles.prices, dict(linestyle='-')
@@ -192,7 +192,7 @@ def hold_coin_while_gaining(coin):
             market_sell(coin.symbol, holding_amount)
             break
         else:
-            time.sleep(3*60)
+            time.sleep(1*60)
 
     elapsed_time = time.time() - start_time
     candles = Candles(coin.symbol, '1m', limit=max(2, math.ceil(elapsed_time/60/1)))
@@ -363,8 +363,8 @@ class Candles(list):
         prices = [np.average(candle[2:4]) for candle in self]
         to_center = (self[-1][0] - self[-2][0]) / 2 / milli_seconds_in_hour
         times = [candle[0] / milli_seconds_in_hour + to_center for candle in self]
-        times.append(times[-1]+to_center)
-        prices.append(self[-1][-2])
+        #times.append(times[-1]+to_center)
+        #prices.append(self[-1][-2])
         return times, prices
 
     def polyfit(self, deg):
