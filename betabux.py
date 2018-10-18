@@ -41,7 +41,7 @@ def main():
                 ignore = {'HOT', 'DENT', 'NPXS'}
                 symbols = ['BTC/USDT'] + [symbol for symbol, market in binance.markets.items()
                                           if market['active'] and market['quote'] == 'BTC' and market['base'] not in ignore
-                                          and (market['base'] == holding.name or tickers[symbol]['quoteVolume'] > 300)]
+                                          and (market['base'] == holding.name or tickers[symbol]['quoteVolume'] > 800)]
 
                 market_delta = np.average([v['percentage'] for k, v in tickers.items() if k.endswith('/BTC')])
                 print(f"24 hour alt coin change: {market_delta}%")
@@ -68,7 +68,7 @@ def main():
 
                             if best.gain < .001:
                                 print(f"{best.name} not good enough")
-                                time.sleep(5*60)
+                                time.sleep(3*60)
                                 continue
 
                             if best is btc:
@@ -137,8 +137,8 @@ def get_best_coins(coins):
     #tickers = binance.fetch_tickers()
     for coin in coins:
         #coin.price = tickers[coin.symbol]['last']
-        flat_candles  = Candles(coin.symbol, '5m', limit=2*12)[:-2]
-        spike_candles = Candles(coin.symbol, '1m', limit=10)
+        flat_candles  = Candles(coin.symbol, '15m', limit=2*4)[:-1]
+        spike_candles = Candles(coin.symbol, '1m', limit=15)
         coin.price = spike_candles.end_price
 
         times, prices = flat_candles.prices
@@ -149,7 +149,7 @@ def get_best_coins(coins):
 
         max_price = max(flat_candles.max, spike_candles.max)
         coin.max_jump = max(abs(candle[2]-candle[3]) for candle in spike_candles) / coin.price
-        coin.spike = (coin.price*4 - max_price*3 - flat_candles.max) / coin.price - coin.max_jump
+        coin.spike = (coin.price*3 - max_price*2 - flat_candles.max) / coin.price - coin.max_jump
 
         coin.gain  = coin.flat * clamp(coin.spike, -1, 1)
 
@@ -158,12 +158,14 @@ def get_best_coins(coins):
 
     coins.sort(key=lambda coin: coin.gain, reverse=True)
 
-    col  = lambda s,w=6: s.ljust(w)
-    rcol = lambda n,w=6: str(round(n, 2)).ljust(w)
-    pcol = lambda n: percentage(n).ljust(6)
-    print(col(''), col('gain'), col('flat',4), col('spike'), col('jump'), col('rate'), col('error'))
-    for coin in coins[:3]:
-        print(col(coin.name), pcol(coin.gain), rcol(coin.flat,4), pcol(coin.spike), pcol(coin.max_jump), pcol(coin.rate), rcol(coin.error))
+    if coins[0].gain > 0:
+        col  = lambda s,w=6: s.ljust(w)
+        rcol = lambda n,w=6: str(round(n, 2)).ljust(w)
+        pcol = lambda n: percentage(n).ljust(6)
+        print(col(''), col('gain'), col('flat',4), col('spike'), col('jump'), col('rate'), col('error'))
+        for coin in coins[:3]:
+            if coin.gain > 0:
+                print(col(coin.name), pcol(coin.gain), rcol(coin.flat,4), pcol(coin.spike), pcol(coin.max_jump), pcol(coin.rate), rcol(coin.error))
 
     return coins
 
@@ -178,7 +180,7 @@ def hold_coin_while_gaining(coin):
     print(cell("y'"), cell("rate"), cell('gain'))
 
     while True:
-        candles = Candles(coin.symbol, '1m', limit=30)
+        candles = Candles(coin.symbol, '1m', limit=15)
         deriv = np.polyder(candles.polyfit(2))
         now  = np.polyval(deriv, candles.end_time)      / start_price
         soon = np.polyval(deriv, candles.end_time+1/20) / start_price
