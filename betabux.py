@@ -138,15 +138,17 @@ def get_best_coins(coins):
     for coin in coins:
         #coin.price = tickers[coin.symbol]['last']
         flat_candles  = Candles(coin.symbol, '15m', limit=2*4)[:-1]
-        spike_candles = Candles(coin.symbol, '1m', limit=15)
-        coin.price = spike_candles.end_price
-
+        coin.price = flat_candles.end_price
         times, prices = flat_candles.prices
         fit, error, *_ = np.polyfit(times, prices, 1, full=True)
         coin.rate  = fit[0] / coin.price
         coin.error = error[0]*4e3 / coin.price**2
         coin.flat  = 1 / (1 + abs(coin.rate)*4e2 + coin.error)
+        if coin.flat < .1:
+            coin.gain = -1
+            continue
 
+        spike_candles = Candles(coin.symbol, '1m', limit=15)
         max_price = max(flat_candles.max, spike_candles.max)
         coin.max_jump = max(abs(candle[2]-candle[3]) for candle in spike_candles) / coin.price
         coin.spike = (coin.price*2 - max_price*1 - flat_candles.max) / coin.price - coin.max_jump
