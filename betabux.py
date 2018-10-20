@@ -44,7 +44,7 @@ def main():
                 symbols = [symbol for symbol, market in binance.markets.items() if symbol in keep or (
                            market['active'] and market['quote'] == 'BTC'
                            and tick_size(symbol) < .001
-                           and tickers[symbol]['quoteVolume'] > 50)]
+                           and tickers[symbol]['quoteVolume'] > 200)]
 
                 market_delta = np.average([v['percentage'] for k, v in tickers.items() if k.endswith('/BTC')])
                 print(f"24 hour alt coin change: {market_delta}%")
