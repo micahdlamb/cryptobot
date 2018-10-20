@@ -4,7 +4,7 @@ Simulate cost function to evaluate how good...
 Tensor flow
 """
 
-import os, sys, time, math, collections, io, contextlib, traceback
+import os, sys, time, math, collections, io, contextlib, traceback, datetime
 import smtplib
 from email.message import EmailMessage
 from email.utils import make_msgid
@@ -38,10 +38,13 @@ def main():
             with io.StringIO() as log, contextlib.redirect_stdout(Tee(log, sys.stdout)):
                 holding = get_holding_coin()
                 tickers = binance.fetch_tickers()
-                ignore = {'HOT', 'DENT', 'NPXS'}
-                symbols = ['BTC/USDT'] + [symbol for symbol, market in binance.markets.items()
-                                          if market['active'] and market['quote'] == 'BTC' and market['base'] not in ignore
-                                          and (market['base'] == holding.name or tickers[symbol]['quoteVolume'] > 800)]
+                #ignore = {'HOT', 'DENT', 'NPXS', 'KEY', 'SC', 'CDT', 'QTUM', 'TNB', 'VET', 'MFT', 'XVG'}
+                tick_size = lambda symbol: 10 ** -binance.markets[symbol]['precision']['price'] / tickers[symbol]['last']
+                keep = {'BTC/USDT', 'TUSD/BTC' f'{holding.name}/BTC'}
+                symbols = [symbol for symbol, market in binance.markets.items() if symbol in keep or (
+                           market['active'] and market['quote'] == 'BTC'
+                           and tick_size(symbol) < .001
+                           and tickers[symbol]['quoteVolume'] > 50)]
 
                 market_delta = np.average([v['percentage'] for k, v in tickers.items() if k.endswith('/BTC')])
                 print(f"24 hour alt coin change: {market_delta}%")
@@ -63,12 +66,10 @@ def main():
                     if hodl is btc:
                         result = "BTC -> "
                         while True:
-                            coins = get_best_coins(coins)
-                            best = coins[0]
+                            best = get_best_coin(coins)
 
-                            if best.gain < .001:
-                                print(f"{best.name} not good enough")
-                                time.sleep(3*60)
+                            if not best:
+                                time.sleep(1*60)
                                 continue
 
                             if best is btc:
@@ -76,7 +77,7 @@ def main():
                                 time.sleep(30)
                                 continue
 
-                            market_buy(best.symbol)
+                            market_buy(best.symbol, .5)
                             hodl = best
                             break
                             '''
@@ -132,44 +133,59 @@ def get_coins(symbols):
     return coins
 
 
-def get_best_coins(coins):
+def get_best_coin(coins):
     print('Looking for best coins...')
-    #tickers = binance.fetch_tickers()
+    good_coins = []
+    tickers = binance.fetch_tickers()
     for coin in coins:
-        #coin.price = tickers[coin.symbol]['last']
-        flat_candles  = Candles(coin.symbol, '15m', limit=2*4)[:-1]
-        coin.price = flat_candles.end_price
-        times, prices = flat_candles.prices
-        fit, error, *_ = np.polyfit(times, prices, 1, full=True)
-        coin.rate  = fit[0] / coin.price
-        coin.error = error[0]*4e3 / coin.price**2
-        coin.flat  = 1 / (1 + abs(coin.rate)*4e2 + coin.error)
-        if coin.flat < .1:
-            coin.gain = -1
+        price = tickers[coin.symbol]['last']
+        if not hasattr(coin, '_max_seen') or time.time() - coin._time > 30*60:
+            coin._max_seen = -1
+            coin._time = time.time()
+        if price < coin._max_seen:
+            continue
+        flat_candles  = Candles(coin.symbol, '5m', limit=2*12)[:-1]
+        coin._max_seen = max(coin._max_seen, flat_candles.max)
+        if price < coin._max_seen:
             continue
 
-        spike_candles = Candles(coin.symbol, '1m', limit=15)
-        max_price = max(flat_candles.max, spike_candles.max)
-        coin.max_jump = max(abs(candle[2]-candle[3]) for candle in spike_candles) / coin.price
-        coin.spike = (coin.price*2 - max_price*1 - flat_candles.max) / coin.price - coin.max_jump
+        fit, error, *_ = flat_candles.polyfit(1, full=True)
+        coin.rate  = fit[0] / price
+        coin.error = error[0]*1e4 / price**2
+        coin.flat  = 1 / (1 + abs(coin.rate)*1e3 + coin.error)
+        if coin.flat < .2:
+            continue
 
-        coin.gain  = coin.flat * clamp(coin.spike, -.01, .01)
+        spike_candles = Candles(coin.symbol, '1m', limit=5)
+        max_price = max(flat_candles.max, spike_candles.max)
+        coin.max_jump = max(abs(candle[2]-candle[3]) for candle in spike_candles) / price
+        coin.spike = (price*4 - max_price*3 - flat_candles.max) / price - coin.max_jump
+
+        coin.gain  = coin.flat * coin.spike
 
         coin.plots["flat"]  = *flat_candles.prices,  dict(linestyle='-')
         coin.plots["spike"] = *spike_candles.prices, dict(linestyle='-')
+        good_coins.append(coin)
 
-    coins.sort(key=lambda coin: coin.gain, reverse=True)
+    good_coins.sort(key=lambda coin: coin.gain, reverse=True)
 
-    if coins[0].gain > 0:
-        col  = lambda s,w=6: s.ljust(w)
-        rcol = lambda n,w=6: str(round(n, 2)).ljust(w)
-        pcol = lambda n: percentage(n).ljust(6)
-        print(col(''), col('gain'), col('flat',4), col('spike'), col('jump'), col('rate'), col('error'))
-        for coin in coins[:3]:
-            if coin.gain > 0:
-                print(col(coin.name), pcol(coin.gain), rcol(coin.flat,4), pcol(coin.spike), pcol(coin.max_jump), pcol(coin.rate), rcol(coin.error))
+    if not good_coins:
+        print('No good coins found')
+        return None
 
-    return coins
+    col  = lambda s,w=6: s.ljust(w)
+    rcol = lambda n,w=6: str(round(n, 2)).ljust(w)
+    pcol = lambda n: percentage(n).ljust(6)
+    print(col(''), col('gain'), col('flat',4), col('spike'), col('jump'), col('rate'), col('error'))
+    for coin in good_coins:
+        print(col(coin.name), pcol(coin.gain), rcol(coin.flat,4), pcol(coin.spike), pcol(coin.max_jump), pcol(coin.rate), rcol(coin.error))
+
+    best = good_coins[0]
+    if best.gain < .001:
+        print(f"{best.name} not good enough")
+        return None
+
+    return best
 
 
 def hold_coin_while_gaining(coin):
@@ -177,20 +193,20 @@ def hold_coin_while_gaining(coin):
     holding_amount = binance.fetch_balance()[coin.name]['free']
     start_price = binance.fetch_ticker(coin.symbol)['last']
     start_time  = time.time()
+    max_price = -1
 
     cell = lambda s: s.ljust(9)
-    print(cell("y'"), cell("rate"), cell('gain'))
+    print(cell("rate"), cell('gain'))
 
     while True:
-        candles = Candles(coin.symbol, '1m', limit=15)
-        deriv = np.polyder(candles.polyfit(2))
-        now  = np.polyval(deriv, candles.end_time)      / start_price
-        soon = np.polyval(deriv, candles.end_time+1/20) / start_price
-        real = candles[-3:].rate / start_price
-        gain = (binance.fetch_ticker(coin.symbol)['last'] - start_price) / start_price
-        print(cell(f"{percentage(now)}/h"), cell(f"{percentage(real)}/h"), cell(percentage(gain)))
+        candles = Candles(coin.symbol, '1m', limit=3)
+        rate = candles.rate / start_price
+        price = binance.fetch_ticker(coin.symbol)['last']
+        max_price = max(max_price, candles.max)
+        gain = (price - start_price) / start_price
+        print(cell(f"{percentage(rate)}/h"), cell(percentage(gain)))
 
-        if real < 0 and soon < 0:
+        if rate < 0 and price / max_price < .995:
             market_sell(coin.symbol, holding_amount)
             break
         else:
@@ -357,20 +373,44 @@ def email_myself(msg):
 
 
 class Candles(list):
+    cache = dict()
+
     def __init__(self, symbol, timeFrame, limit):
         super().__init__(binance.fetch_ohlcv(symbol, timeFrame, limit=limit))
+        #key = symbol, timeFrame
+        #ohlcv = self.cache.get(key)
+        #if not ohlcv or limit > len(ohlcv):
+        #    self.cache[key] = ohlcv = binance.fetch_ohlcv(symbol, timeFrame, limit=limit)
+        #else:
+        #    now = datetime.datetime.now().timestamp() * 1000
+        #    dt = ohlcv[1][0] - ohlcv[0][0]
+        #    keep_limit = max(len(ohlcv), limit)
+        #    new_limit = min(keep_limit, math.floor((now - ohlcv[-1][0]) / dt) + 1)
+        #    #print(new_limit, (now - ohlcv[-1][0]) / dt, (now - ohlcv[-1][0])/milli_seconds_in_minute)
+        #    new_ohlcv = binance.fetch_ohlcv(symbol, timeFrame, limit=new_limit)
+        #    ohlcv = ohlcv[:-1] + new_ohlcv
+        #    self.cache[key] = ohlcv[-keep_limit:]
+        #    ohlcv = ohlcv[-limit:]
+        #    for i in range(len(ohlcv)-1):
+        #        assert dt*.9 < ohlcv[i+1][0] - ohlcv[i][0] < dt*1.1
+
+        #super().__init__(ohlcv)
 
     @property
     def prices(self):
         prices = [np.average(candle[2:4]) for candle in self]
-        to_center = (self[-1][0] - self[-2][0]) / 2 / milli_seconds_in_hour
+        to_center = self.dt / 2
         times = [candle[0] / milli_seconds_in_hour + to_center for candle in self]
         #times.append(times[-1]+to_center)
         #prices.append(self[-1][-2])
         return times, prices
 
-    def polyfit(self, deg):
-        return np.polyfit(*self.prices, deg)
+    @property
+    def dt(self):
+        return (self[1][0] - self[0][0]) / milli_seconds_in_hour
+
+    def polyfit(self, deg, **kwds):
+        return np.polyfit(*self.prices, deg, **kwds)
 
     @property
     def avg_price(self):
