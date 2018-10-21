@@ -144,7 +144,7 @@ def get_best_coin(coins):
             coin._time = time.time()
         if price < coin._max_seen:
             continue
-        flat_candles  = Candles(coin.symbol, '5m', limit=2*12)[:-1]
+        flat_candles  = Candles(coin.symbol, '5m', limit=1*12)[:-1]
         coin._max_seen = max(coin._max_seen, flat_candles.max)
         if price < coin._max_seen:
             continue
