@@ -159,7 +159,7 @@ def get_best_coin(coins):
         spike_candles = Candles(coin.symbol, '1m', limit=5)
         max_price = max(flat_candles.max, spike_candles.max)
         coin.max_jump = max(abs(candle[2]-candle[3]) for candle in spike_candles) / price
-        coin.spike = (price*4 - max_price*3 - flat_candles.max) / price - coin.max_jump
+        coin.spike = (price*2 - max_price*1 - flat_candles.max) / price - coin.max_jump
 
         coin.gain  = coin.flat * coin.spike
 
