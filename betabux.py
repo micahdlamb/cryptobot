@@ -151,7 +151,7 @@ def get_best_coin(coins):
         print(col(coin.name), pcol(coin.gain), rcol(coin.flat,4), pcol(coin.spike), pcol(coin.max_jump), pcol(coin.rate), rcol(coin.error))
 
     best = good_coins[0]
-    if best.gain < .001:
+    if best.gain < 0:
         print(f"{best.name} not good enough")
         return None
 
