@@ -69,7 +69,7 @@ def main():
                             time.sleep(30)
                             continue
 
-                        market_buy(best.symbol, .5)
+                        market_buy(best.symbol, .65)
                         hodl = best
                         break
                         '''
@@ -163,20 +163,20 @@ def hold_coin_while_gaining(coin):
     holding_amount = binance.fetch_balance()[coin.name]['free']
     start_price = binance.fetch_ticker(coin.symbol)['last']
     start_time  = time.time()
-    max_price = -1
 
     cell = lambda s: s.ljust(9)
-    print(cell("rate"), cell('gain'))
+    print(cell("y'"), cell("rate"), cell('gain'))
 
     while True:
-        candles = Candles(coin.symbol, '1m', limit=3)
-        rate = candles.rate / start_price
-        price = binance.fetch_ticker(coin.symbol)['last']
-        max_price = max(max_price, candles.max)
-        gain = (price - start_price) / start_price
-        print(cell(f"{percentage(rate)}/h"), cell(percentage(gain)))
+        candles = Candles(coin.symbol, '1m', limit=10)
+        deriv = np.polyder(candles.polyfit(2))
+        now  = np.polyval(deriv, candles.end_time)      / start_price
+        soon = np.polyval(deriv, candles.end_time+1/20) / start_price
+        real = candles[-3:].rate / start_price
+        gain = (binance.fetch_ticker(coin.symbol)['last'] - start_price) / start_price
+        print(cell(f"{percentage(now)}/h"), cell(f"{percentage(real)}/h"), cell(percentage(gain)))
 
-        if rate < 0 and price / max_price < .995:
+        if real < 0 and soon < 0:
             market_sell(coin.symbol, holding_amount)
             break
         else:
