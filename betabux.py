@@ -83,8 +83,7 @@ def main():
 
                 result += f"{hodl.name} -> BTC"
                 hold_coin_while_gaining(hodl)
-
-            email_myself_plots(result, start_balance, [hodl], log.getvalue())
+                email_myself_plots(result, start_balance, [hodl], log.getvalue())
 
         except:
             import traceback
