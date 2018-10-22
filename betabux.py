@@ -305,13 +305,14 @@ def email_myself_plots(subject, start_balance, coins, log):
         plt.title(coin.name+(f"  {percentage(coin.gain)}" if hasattr(coin, 'gain') else ""))
         plt.xlabel("hours")
         plt.xticks(range(-100 * 4, 10 * 4, 4))
+        now_hours = datetime.datetime.now().timestamp() / 3600
         for name, (x, y, kwds) in coin.plots.items():
-            x = [t-coin.zero_time for t in x]
+            x = [t-now_hours for t in x]
             plt.plot(x, y, label=name, **kwds)
 
         for trade in trade_log:
             if trade['symbol'] == coin.symbol:
-                x = trade['fill_time'] - coin.zero_time
+                x = trade['fill_time'] - now_hours
                 y = trade['price']
                 plt.text(x, y, trade['side'][0])
 
