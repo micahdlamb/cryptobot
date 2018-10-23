@@ -105,7 +105,7 @@ def get_best_coin(coins):
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
-        price = tickers[coin.symbol]['last']
+        coin.price = price = tickers[coin.symbol]['last']
         if not hasattr(coin, '_max_seen') or time.time() - coin._time > 30*60:
             coin._max_seen = -1
             coin._time = time.time()
