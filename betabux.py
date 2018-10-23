@@ -69,17 +69,15 @@ def main():
                             time.sleep(30)
                             continue
 
-                        market_buy(best.symbol, .65)
-                        hodl = best
-                        break
-                        '''
+                        #market_buy(best.symbol, .65)
+                        #hodl = best
+                        #break
                         try:
                             filled_order = trade_coin('BTC', best.name, max_change=(best.price, .015))
                             hodl = best
                             break
                         except TimeoutError as error:
                             print(error)
-                        '''
 
                 result += f"{hodl.name} -> BTC"
                 hold_coin_while_gaining(hodl)
@@ -167,7 +165,7 @@ def hold_coin_while_gaining(coin):
     print(cell("y'"), cell("rate"), cell('gain'))
 
     while True:
-        candles = Candles(coin.symbol, '1m', limit=10)
+        candles = Candles(coin.symbol, '1m', limit=30)
         deriv = np.polyder(candles.polyfit(2))
         now  = np.polyval(deriv, candles.end_time)      / start_price
         soon = np.polyval(deriv, candles.end_time+1/20) / start_price
@@ -220,12 +218,10 @@ def trade_coin(from_coin, to_coin, max_change=None):
     if from_coin == 'BTC':
         side = 'buy'
         symbol = f"{to_coin}/{from_coin}"
-        good_direction = -1
 
     else:
         side = 'sell'
         symbol = f"{from_coin}/{to_coin}"
-        good_direction = 1
 
     filled = 0
     for i in range(6):
@@ -235,7 +231,7 @@ def trade_coin(from_coin, to_coin, max_change=None):
         avg_price = np.average([bid_price, ask_price])
 
         holding_amount = binance.fetch_balance()[from_coin]['free']
-        rate = Candles(symbol, '1m', limit=5).rate
+        rate = Candles(symbol, '1m', limit=3).rate
 
         if side == 'buy':
             price  = round_price_down(symbol, min(ask_price*1.002, bid_price + rate/20))
