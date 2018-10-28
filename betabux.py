@@ -244,7 +244,7 @@ def trade_coin(from_coin, to_coin, max_change=None):
         m1x    = unmix(price, bid_price, ask_price)
         spread = (ask_price - bid_price) / avg_price
         rate   = rate / avg_price
-        print(f"{side} {amount} {symbol} at {price} mix={round(m1x, 2)} <->={percentage(spread)} y'={percentage(rate)}/h")
+        print(f"{side} {amount} {symbol} at {price} mix={round(m1x, 3)} <->={percentage(spread)} y'={percentage(rate)}/h")
 
         order = create_order_and_wait(symbol, side, amount, price)
         if order['status'] == 'closed':
