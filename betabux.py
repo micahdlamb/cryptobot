@@ -75,14 +75,18 @@ def main():
                             print(error)
 
                     result = f"BTC -> {best.name} -> BTC"
-                    timeout, poll = best.wave_length * 60 / 2, 5
-                    order = create_order_and_wait(best.symbol, 'sell', order['amount'], best.peak, timeout, poll)
+                    with record_plot(best, 'hold'):
+                        timeout, poll = best.wave_length * 60 / 2, 5
+                        order = create_order_and_wait(best.symbol, 'sell', order['amount'], best.crest, timeout, poll)
+
                     if order['status'] != 'closed':
-                        hold_coin_while_gaining(best)
+                        with record_plot(best, 'sell'):
+                            hold_coin_while_gaining(best)
 
                 else:
                     result = f"{hodl.name} -> BTC"
-                    hold_coin_while_gaining(hodl)
+                    with record_plot(hodl, 'sell'):
+                        hold_coin_while_gaining(hodl)
 
                 email_myself_plots(result, start_balance, [hodl], log.getvalue())
 
@@ -113,11 +117,15 @@ def get_best_coin(coins):
         coin.freq = wave_fit.freq
         coin.wave_length = 12/wave_fit.freq
         coin.phase = unmix(abs(wave_fit.phase - np.pi), np.pi, 0)*2 -1
+        zero = wave_fit.trend_prices[1][-1]
+        coin.crest  = zero + wave_fit.amp
+        coin.trough = zero - wave_fit.amp
+        phase_check = clamp(unmix(coin.price, coin.crest, coin.trough), 0, 1)*2 -1
+        phase = min(coin.phase, phase_check)
         coin.trend = wave_fit.trend / coin.price
-        coin.gain = coin.amp * coin.freq**2 * coin.phase + clamp(coin.trend*coin.wave_length/2, -.01, .01)
+        coin.gain = coin.amp * coin.freq**2 * phase + clamp(coin.trend*coin.wave_length/2, -.01, .01)
         if coin.gain < 0: continue
 
-        coin.peak = coin.price + wave_fit.amp*2
         coin.plots["actual"] = *candles.prices,  dict(linestyle='-')
         coin.plots["wave"]   = *wave_fit.prices, dict(linestyle='--')
         coin.plots["trend"]  = *wave_fit.trend_prices, dict(linestyle='--')
@@ -150,11 +158,8 @@ def get_best_coin(coins):
 def hold_coin_while_gaining(coin):
     print(f"====== Holding {coin.name} ======")
     start_price = binance.fetch_ticker(coin.symbol)['last']
-    start_time  = time.time()
-
     cell = lambda s: s.ljust(9)
     print(cell("y'"), cell("rate"), cell('gain'))
-
     while True:
         candles = Candles(coin.symbol, '1m', limit=15)
         deriv = np.polyder(candles.polyfit(2))
@@ -172,10 +177,6 @@ def hold_coin_while_gaining(coin):
                 print(err)
         else:
             time.sleep(3*60)
-
-    elapsed_time = time.time() - start_time
-    candles = Candles(coin.symbol, '1m', limit=max(2, math.ceil(elapsed_time/60)))
-    coin.plots['holding'] = *candles.prices, dict(linestyle='-')
 
 
 def market_buy(symbol, fraction_of_btc=.95):
@@ -383,8 +384,8 @@ class Candles(list):
         n = len(diffs)
         fft = np.fft.fft(diffs)[:int(n/2)] / n
         freq, wave = max(enumerate(fft), key=lambda x: abs(x[1]))
-        val = lambda x: np.real(wave * (np.cos(x*freq*2*np.pi/n) + 1j * np.sin(x*freq*2*np.pi/n))) * 2
-        wave_fit = self.WaveFit(trend_fit[0], freq, abs(wave), np.angle(wave) % (2*np.pi))
+        val = lambda x: np.real(wave * (np.cos(x*freq*2*np.pi/n) + 1j * np.sin(x*freq*2*np.pi/n)))*2
+        wave_fit = self.WaveFit(trend_fit[0], freq, abs(wave)*2, np.angle(wave) % (2*np.pi))
         wave_fit.trend_prices = times, trend_prices
         wave_fit.prices = times,  [trend_price + val(i) for i, trend_price in enumerate(trend_prices)]
         return wave_fit
@@ -468,6 +469,15 @@ def get_holding_coin():
             print(f"WARNING {coin.amount_used} {coin.name} is used")
     
     return max(balance.coins.values(), key=lambda coin: coin.btc_free)
+
+
+@contextlib.contextmanager
+def record_plot(coin, plot_name, style=dict(linestyle='-')):
+    start_time = time.time()
+    yield
+    elapsed_time = time.time() - start_time
+    candles = Candles(coin.symbol, '1m', limit=max(2, math.ceil(elapsed_time/60)))
+    coin.plots[plot_name] = *candles.prices, style
 
 
 def round_price_up(symbol, price):
