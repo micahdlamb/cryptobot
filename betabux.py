@@ -59,7 +59,7 @@ def main():
                         best = get_best_coin(coins)
 
                         if not best:
-                            time.sleep(10*60)
+                            time.sleep(5*60)
                             continue
 
                         if best is btc:
@@ -107,11 +107,11 @@ def get_best_coin(coins):
     tickers = binance.fetch_tickers()
     for coin in coins:
         coin.price = tickers[coin.symbol]['last']
-        candles = Candles(coin.symbol, '15m', limit=24*4)
+        candles = Candles(coin.symbol, '15m', limit=12*4)
         wave_fit = candles.wavefit()
         coin.amp  = wave_fit.amp / coin.price
         coin.freq = wave_fit.freq
-        coin.wave_length = 24/wave_fit.freq
+        coin.wave_length = 12/wave_fit.freq
         coin.phase = unmix(abs(wave_fit.phase - np.pi), np.pi, 0)*2 -1
         coin.trend = wave_fit.trend / coin.price
         coin.gain = coin.amp * coin.freq**2 * coin.phase + clamp(coin.trend*coin.wave_length/2, -.01, .01)
@@ -156,15 +156,15 @@ def hold_coin_while_gaining(coin):
     print(cell("y'"), cell("rate"), cell('gain'))
 
     while True:
-        candles = Candles(coin.symbol, '3m', limit=20)
+        candles = Candles(coin.symbol, '1m', limit=15)
         deriv = np.polyder(candles.polyfit(2))
         now  = np.polyval(deriv, candles.end_time)      / start_price
-        soon = np.polyval(deriv, candles.end_time+1/20) / start_price
+        soon = np.polyval(deriv, candles.end_time+1/12) / start_price
         real = candles[-3:].rate / start_price
         gain = (binance.fetch_ticker(coin.symbol)['last'] - start_price) / start_price
         print(cell(f"{percentage(now)}/h"), cell(f"{percentage(real)}/h"), cell(percentage(gain)))
 
-        if real < 0 and soon < 0:
+        if real < 0 and (soon < 0 or gain > .015):
             try:
                 trade_coin(coin.name, 'BTC')
                 break
@@ -174,7 +174,7 @@ def hold_coin_while_gaining(coin):
             time.sleep(3*60)
 
     elapsed_time = time.time() - start_time
-    candles = Candles(coin.symbol, '1m', limit=max(2, math.ceil(elapsed_time/60/1)))
+    candles = Candles(coin.symbol, '1m', limit=max(2, math.ceil(elapsed_time/60)))
     coin.plots['holding'] = *candles.prices, dict(linestyle='-')
 
 
