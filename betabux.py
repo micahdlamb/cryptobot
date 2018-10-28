@@ -34,8 +34,8 @@ def main():
 
     while True:
         start_time = time.time()
-        try:
-            with io.StringIO() as log, contextlib.redirect_stdout(Tee(log, sys.stdout)):
+        with io.StringIO() as log, contextlib.redirect_stdout(Tee(log, sys.stdout)):
+            try:
                 holding = get_holding_coin()
                 tickers = binance.fetch_tickers()
                 market_delta = np.average([v['percentage'] for k, v in tickers.items() if k.endswith('/BTC')])
@@ -86,14 +86,12 @@ def main():
 
                 email_myself_plots(result, start_balance, [hodl], log.getvalue())
 
-        except:
-            import traceback
-            error = traceback.format_exc()
-            print(error, file=sys.stderr)
-            msg = EmailMessage()
-            msg['Subject'] = 'ERROR'
-            msg.set_content(error)
-            email_myself(msg)
+            except:
+                print(traceback.format_exc())
+                msg = EmailMessage()
+                msg['Subject'] = 'ERROR'
+                msg.set_content(log.getvalue())
+                email_myself(msg)
 
         # Not really needed but just in case...
         loop_minutes = (time.time() - start_time) / 60
