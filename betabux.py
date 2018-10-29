@@ -76,7 +76,7 @@ def main():
 
                     result = f"BTC -> {best.name} -> BTC"
                     with record_plot(best, 'hold'):
-                        timeout, poll = best.wave_length * 60 / 2, 5
+                        timeout, poll = best.wait * 60 / 2, 5
                         order = create_order_and_wait(best.symbol, 'sell', order['amount'], best.crest, timeout, poll)
 
                     if order['status'] != 'closed':
@@ -111,19 +111,21 @@ def get_best_coin(coins):
     tickers = binance.fetch_tickers()
     for coin in coins:
         coin.price = tickers[coin.symbol]['last']
-        candles = Candles(coin.symbol, '15m', limit=12*4)
+        hours = 12
+        candles = Candles(coin.symbol, '15m', limit=hours*4)
         wave_fit = candles.wavefit()
         coin.amp  = wave_fit.amp / coin.price
         coin.freq = wave_fit.freq
-        coin.wave_length = 12/wave_fit.freq
-        coin.phase = unmix(abs(wave_fit.phase - np.pi), np.pi, 0)*2 -1
+        wave_length = hours/wave_fit.freq
+        coin.wait  = unmix(2*np.pi - wave_fit.phase, 0, 2*np.pi) * wave_length
+        coin.phase = unmix(abs(np.pi - wave_fit.phase), np.pi, 0)*2 -1
         zero = wave_fit.trend_prices[1][-1]
         coin.crest  = zero + wave_fit.amp
         coin.trough = zero - wave_fit.amp
         phase_check = clamp(unmix(coin.price, coin.crest, coin.trough), 0, 1)*2 -1
         phase = min(coin.phase, phase_check)
         coin.trend = wave_fit.trend / coin.price
-        coin.gain = coin.amp * coin.freq**2 * phase + clamp(coin.trend*coin.wave_length/2, -.01, .01)
+        coin.gain = coin.amp * coin.freq**2 * phase + clamp(coin.trend*coin.wait, -.01, .01)
         if coin.gain < 0: continue
 
         coin.plots["actual"] = *candles.prices,  dict(linestyle='-')
