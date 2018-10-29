@@ -76,7 +76,7 @@ def main():
 
                     result = f"BTC -> {best.name} -> BTC"
                     with record_plot(best, 'hold'):
-                        timeout, poll = best.wait * 60 / 2, 5
+                        timeout, poll = best.wait * 60, 5
                         order = create_order_and_wait(best.symbol, 'sell', order['amount'], best.crest, timeout, poll)
 
                     if order['status'] != 'closed':
