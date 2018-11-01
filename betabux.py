@@ -119,27 +119,24 @@ def get_best_coin(coins):
         wave_length = hours/wave_fit.freq
         coin.wait  = unmix(2*np.pi - wave_fit.phase, 0, 2*np.pi) * wave_length
         coin.phase = unmix(abs(np.pi - wave_fit.phase), np.pi, 0)*2 -1
-        zero = wave_fit.trend_prices[1][-1]
-        coin.crest  = zero + wave_fit.amp
-        coin.trough = zero - wave_fit.amp
+        coin.crest  = wave_fit.zero + wave_fit.amp
+        coin.trough = wave_fit.zero - wave_fit.amp
         phase_check = clamp(unmix(coin.price, coin.crest, coin.trough), 0, 1)*2 -1
         phase = min(coin.phase, phase_check)
-        coin.trend = wave_fit.trend / coin.price
-        coin.gain = coin.amp * coin.freq**2 * phase + clamp(coin.trend*coin.wait, -.01, .01)
+        coin.gain = coin.amp * coin.freq**2 * phase
         if coin.gain < 0: continue
 
         coin.plots["actual"] = *candles.prices,  dict(linestyle='-')
         coin.plots["wave"]   = *wave_fit.prices, dict(linestyle='--')
-        coin.plots["trend"]  = *wave_fit.trend_prices, dict(linestyle='--')
         good_coins.append(coin)
 
     good_coins.sort(key=lambda coin: coin.gain, reverse=True)
     col  = lambda s: s.ljust(6)
     rcol = lambda n: str(round(n, 2)).ljust(6)
     pcol = lambda n: percentage(n).ljust(6)
-    print(col(''), col('gain'), col('amp'), col('freq'), col('phase'), col('trend'))
+    print(col(''), col('gain'), col('amp'), col('freq'), col('phase'))
     for coin in good_coins[:10]:
-        print(col(coin.name), pcol(coin.gain), pcol(coin.amp), rcol(coin.freq), rcol(coin.phase), pcol(coin.trend))
+        print(col(coin.name), pcol(coin.gain), pcol(coin.amp), rcol(coin.freq), rcol(coin.phase))
 
         #plt.figure()
         #plt.title(coin.name)
@@ -376,20 +373,18 @@ class Candles(list):
     def polyfit(self, deg, **kwds):
         return np.polyfit(*self.prices, deg, **kwds)
 
-    class WaveFit(collections.namedtuple("Wave", "trend freq amp phase")): pass
+    class WaveFit(collections.namedtuple("Wave", "zero freq amp phase")): pass
 
     def wavefit(self):
         times, prices = self.prices
-        trend_fit = np.polyfit(times, prices, deg=1)
-        trend_prices = np.polyval(trend_fit, times)
-        diffs = [price - trend_price for price, trend_price in zip(prices, trend_prices)]
-        n = len(diffs)
-        fft = np.fft.fft(diffs)[:int(n/2)] / n
-        freq, wave = max(enumerate(fft), key=lambda x: abs(x[1]))
+        n = len(prices)
+        fft = np.fft.fft(prices)[:int(n/2)] / n
+        zero = fft[0].real
+        freq, wave = max(enumerate(fft[1:]), key=lambda x: abs(x[1]))
+        freq += 1
         val = lambda x: np.real(wave * (np.cos(x*freq*2*np.pi/n) + 1j * np.sin(x*freq*2*np.pi/n)))*2
-        wave_fit = self.WaveFit(trend_fit[0], freq, abs(wave)*2, np.angle(wave) % (2*np.pi))
-        wave_fit.trend_prices = times, trend_prices
-        wave_fit.prices = times,  [trend_price + val(i) for i, trend_price in enumerate(trend_prices)]
+        wave_fit = self.WaveFit(zero, freq, abs(wave)*2, np.angle(wave) % (2*np.pi))
+        wave_fit.prices = times,  [zero + val(i) for i in range(n)]
         return wave_fit
 
     @property
