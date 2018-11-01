@@ -111,9 +111,9 @@ def get_best_coin(coins):
     tickers = binance.fetch_tickers()
     for coin in coins:
         coin.price = tickers[coin.symbol]['last']
-        hours = 12
+        hours = 24
         candles = Candles(coin.symbol, '15m', limit=hours*4)
-        wave_fit = candles.wavefit()
+        wave_fit = candles.wavefit(max_freq=3)
         coin.amp  = wave_fit.amp / coin.price
         coin.freq = wave_fit.freq
         wave_length = hours/wave_fit.freq
@@ -123,7 +123,7 @@ def get_best_coin(coins):
         coin.trough = wave_fit.zero - wave_fit.amp
         phase_check = clamp(unmix(coin.price, coin.crest, coin.trough), 0, 1)*2 -1
         phase = min(coin.phase, phase_check)
-        coin.gain = coin.amp * coin.freq**2 * phase
+        coin.gain = coin.amp * coin.freq * phase
         if coin.gain < 0: continue
 
         coin.plots["actual"] = *candles.prices,  dict(linestyle='-')
@@ -147,7 +147,7 @@ def get_best_coin(coins):
         #plt.show()
 
     best = good_coins[0]
-    if best.gain < .03:
+    if best.gain < .015:
         print(f"{best.name} not good enough")
         return None
 
@@ -375,13 +375,12 @@ class Candles(list):
 
     class WaveFit(collections.namedtuple("Wave", "zero freq amp phase")): pass
 
-    def wavefit(self):
+    def wavefit(self, max_freq):
         times, prices = self.prices
         n = len(prices)
-        fft = np.fft.fft(prices)[:int(n/2)] / n
+        fft = np.fft.fft(prices)[:max_freq+1] / n
         zero = fft[0].real
-        freq, wave = max(enumerate(fft[1:]), key=lambda x: abs(x[1]))
-        freq += 1
+        freq, wave = max(enumerate(fft), key=lambda x: x[0] * abs(x[1]))
         val = lambda x: np.real(wave * (np.cos(x*freq*2*np.pi/n) + 1j * np.sin(x*freq*2*np.pi/n)))*2
         wave_fit = self.WaveFit(zero, freq, abs(wave)*2, np.angle(wave) % (2*np.pi))
         wave_fit.prices = times,  [zero + val(i) for i in range(n)]
