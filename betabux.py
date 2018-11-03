@@ -76,7 +76,7 @@ def main():
 
                     result = f"BTC -> {best.name} -> BTC"
                     with record_plot(best, 'hold'):
-                        timeout, poll = best.wait * 60, 5
+                        timeout, poll = best.wait * 60, 10
                         order = create_order_and_wait(best.symbol, 'sell', order['amount'], best.crest, timeout, poll)
 
                     if order['status'] != 'closed':
@@ -111,11 +111,17 @@ def get_best_coin(coins):
     tickers = binance.fetch_tickers()
     for coin in coins:
         coin.price = tickers[coin.symbol]['last']
-        hours = 6
-        candles = Candles(coin.symbol, '5m', limit=hours*12)
-        trend_fit = candles.polyfit(1)
-        zero = min(candles.avg_price, np.polyval(trend_fit, candles.end_time))
-        wave_fit = candles.wavefit(max_freq=3)
+
+        lt_candles = Candles(coin.symbol, '4h', limit=6*7)
+        lt_fit = lt_candles.polyfit(2)
+        expected = np.polyval(lt_fit, lt_candles.end_time)
+        coin.lt = (expected - coin.price) / coin.price
+
+        hours = 24
+        wave_candles = Candles(coin.symbol, '15m', limit=hours*4)
+        trend_fit = wave_candles.polyfit(1)
+        zero = np.polyval(trend_fit, wave_candles.end_time)
+        wave_fit = wave_candles.wavefit(max_freq=3)
         coin.amp  = wave_fit.amp / coin.price
         coin.freq = wave_fit.freq
         wave_length = hours/wave_fit.freq
@@ -125,11 +131,13 @@ def get_best_coin(coins):
         coin.trough = zero - wave_fit.amp
         phase_check = clamp(unmix(coin.price, coin.crest, coin.trough), 0, 1)*2 -1
         phase = min(coin.phase, phase_check)
-        coin.gain = coin.amp*2 * coin.freq * phase
+
+        coin.gain = coin.lt + coin.amp*2 * coin.freq * phase
         if coin.gain < 0: continue
 
-        coin.plots["actual"] = *candles.prices, dict(linestyle='-')
+        coin.plots["actual"] = *wave_candles.prices, dict(linestyle='-')
         times, prices = wave_fit.prices
+        coin.plots["lt"] = times, np.polyval(lt_fit, times), dict(linestyle='--')
         coin.plots["zero"] = [times[0], times[-1]], [zero, zero], dict(linestyle='--')
         coin.plots["wave"] = times, [price+zero-wave_fit.zero for price in prices], dict(linestyle='--')
         good_coins.append(coin)
@@ -138,9 +146,9 @@ def get_best_coin(coins):
     col  = lambda s: s.ljust(6)
     rcol = lambda n: str(round(n, 2)).ljust(6)
     pcol = lambda n: percentage(n).ljust(6)
-    print(col(''), col('gain'), col('amp'), col('freq'), col('phase'))
+    print(col(''), col('gain'), col('lt'), col('amp'), col('freq'), col('phase'))
     for coin in good_coins[:10]:
-        print(col(coin.name), pcol(coin.gain), pcol(coin.amp), rcol(coin.freq), rcol(coin.phase))
+        print(col(coin.name), pcol(coin.gain), pcol(coin.lt), pcol(coin.amp), rcol(coin.freq), rcol(coin.phase))
 
         #plt.figure()
         #plt.title(coin.name)
@@ -341,7 +349,7 @@ class Candles(list):
     cache = dict()
 
     def __init__(self, symbol, timeFrame, limit):
-        super().__init__(binance.fetch_ohlcv(symbol, timeFrame, limit=limit))
+        super().__init__(binance.fetch_ohlcv(symbol, timeFrame, limit=max(limit, 2)))
         #key = symbol, timeFrame
         #ohlcv = self.cache.get(key)
         #if not ohlcv or limit > len(ohlcv):
@@ -364,14 +372,14 @@ class Candles(list):
     @property
     def prices(self):
         prices = [np.average(candle[2:4]) for candle in self]
-        to_center = self.dt / 2
+        to_center = self.delta_time / 2
         times = [candle[0] / milli_seconds_in_hour + to_center for candle in self]
         #times.append(times[-1]+to_center)
         #prices.append(self[-1][-2])
         return times, prices
 
     @property
-    def dt(self):
+    def delta_time(self):
         return (self[1][0] - self[0][0]) / milli_seconds_in_hour
 
     def polyfit(self, deg, **kwds):
@@ -416,7 +424,7 @@ class Candles(list):
 
     @property
     def end_time(self):
-        return self[-1][0] / milli_seconds_in_hour
+        return self[-1][0] / milli_seconds_in_hour + self.delta_time
 
     @property
     def min(self):
@@ -476,7 +484,7 @@ def record_plot(coin, plot_name, style=dict(linestyle='-')):
     start_time = time.time()
     yield
     elapsed_time = time.time() - start_time
-    candles = Candles(coin.symbol, '1m', limit=max(2, math.ceil(elapsed_time/60)))
+    candles = Candles(coin.symbol, '1m', limit=math.ceil(elapsed_time/60))
     coin.plots[plot_name] = *candles.prices, style
 
 
