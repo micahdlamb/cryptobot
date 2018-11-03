@@ -111,7 +111,7 @@ def get_best_coin(coins):
     tickers = binance.fetch_tickers()
     for coin in coins:
         coin.price = tickers[coin.symbol]['last']
-        hours = 24
+        hours = 12
         candles = Candles(coin.symbol, '15m', limit=hours*4)
         wave_fit = candles.wavefit(max_freq=3)
         coin.amp  = wave_fit.amp / coin.price
@@ -119,15 +119,19 @@ def get_best_coin(coins):
         wave_length = hours/wave_fit.freq
         coin.wait  = unmix(2*np.pi - wave_fit.phase, 0, 2*np.pi) * wave_length
         coin.phase = unmix(abs(np.pi - wave_fit.phase), np.pi, 0)*2 -1
-        coin.crest  = wave_fit.zero + wave_fit.amp
-        coin.trough = wave_fit.zero - wave_fit.amp
+        last_wave = candles[-int(wave_length*4):]
+        zero = last_wave.avg_price
+        coin.crest  = zero + wave_fit.amp
+        coin.trough = zero - wave_fit.amp
         phase_check = clamp(unmix(coin.price, coin.crest, coin.trough), 0, 1)*2 -1
         phase = min(coin.phase, phase_check)
         coin.gain = coin.amp * coin.freq * phase
         if coin.gain < 0: continue
 
-        coin.plots["actual"] = *candles.prices,  dict(linestyle='-')
+        times, prices = candles.prices
+        coin.plots["actual"] = times, prices,  dict(linestyle='-')
         coin.plots["wave"]   = *wave_fit.prices, dict(linestyle='--')
+        coin.plots["zero"]   = [times[-len(last_wave)], times[-1]], [zero, zero], dict(linestyle='--')
         good_coins.append(coin)
 
     good_coins.sort(key=lambda coin: coin.gain, reverse=True)
