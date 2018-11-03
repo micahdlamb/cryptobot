@@ -111,27 +111,27 @@ def get_best_coin(coins):
     tickers = binance.fetch_tickers()
     for coin in coins:
         coin.price = tickers[coin.symbol]['last']
-        hours = 12
-        candles = Candles(coin.symbol, '15m', limit=hours*4)
+        hours = 6
+        candles = Candles(coin.symbol, '5m', limit=hours*12)
+        trend_fit = candles.polyfit(1)
+        zero = min(candles.avg_price, np.polyval(trend_fit, candles.end_time))
         wave_fit = candles.wavefit(max_freq=3)
         coin.amp  = wave_fit.amp / coin.price
         coin.freq = wave_fit.freq
         wave_length = hours/wave_fit.freq
         coin.wait  = unmix(2*np.pi - wave_fit.phase, 0, 2*np.pi) * wave_length
         coin.phase = unmix(abs(np.pi - wave_fit.phase), np.pi, 0)*2 -1
-        last_wave = candles[-int(wave_length*4):]
-        zero = last_wave.avg_price
         coin.crest  = zero + wave_fit.amp
         coin.trough = zero - wave_fit.amp
         phase_check = clamp(unmix(coin.price, coin.crest, coin.trough), 0, 1)*2 -1
         phase = min(coin.phase, phase_check)
-        coin.gain = coin.amp * coin.freq * phase
+        coin.gain = coin.amp*2 * coin.freq * phase
         if coin.gain < 0: continue
 
-        times, prices = candles.prices
-        coin.plots["actual"] = times, prices,  dict(linestyle='-')
-        coin.plots["wave"]   = *wave_fit.prices, dict(linestyle='--')
-        coin.plots["zero"]   = [times[-len(last_wave)], times[-1]], [zero, zero], dict(linestyle='--')
+        coin.plots["actual"] = *candles.prices, dict(linestyle='-')
+        times, prices = wave_fit.prices
+        coin.plots["zero"] = [times[0], times[-1]], [zero, zero], dict(linestyle='--')
+        coin.plots["wave"] = times, [price+zero-wave_fit.zero for price in prices], dict(linestyle='--')
         good_coins.append(coin)
 
     good_coins.sort(key=lambda coin: coin.gain, reverse=True)
@@ -151,7 +151,7 @@ def get_best_coin(coins):
         #plt.show()
 
     best = good_coins[0]
-    if best.gain < .015:
+    if best.gain < .065:
         print(f"{best.name} not good enough")
         return None
 
