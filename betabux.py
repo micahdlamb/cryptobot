@@ -1,17 +1,17 @@
 """
 Ideas to try:
 Simulate cost function to evaluate how good...
-Tensor flow
 """
 
-import os, sys, time, math, collections, io, contextlib, traceback, datetime
+import os, sys, time, math, collections, io, contextlib, traceback, datetime, platform
 import smtplib
 from email.message import EmailMessage
 from email.utils import make_msgid
 
 import numpy as np
 import matplotlib
-matplotlib.use('Agg') # So I don't need tkinter
+if platform.system == 'Linux':
+    matplotlib.use('Agg') # So I don't need tkinter
 import matplotlib.pyplot as plt
 
 import ccxt
@@ -138,7 +138,7 @@ def get_best_coin(coins):
         coin.trough = zero - wave_fit.amp
         phase_check = clamp(unmix(coin.price, coin.crest, coin.trough), 0, 1)*2 -1
         phase = min(coin.phase, phase_check)
-        coin.wave = coin.amp*2 * coin.freq * phase
+        coin.wave = coin.amp * coin.freq * phase
 
         coin.gain = coin.lt + coin.wave
         if coin.gain < 0: continue
@@ -170,7 +170,7 @@ def get_best_coin(coins):
         #plt.show()
 
     best = good_coins[0]
-    if best.gain < .015:
+    if best.gain < .03:
         print(f"{best.name} not good enough")
         return None
 
@@ -403,7 +403,7 @@ class Candles(list):
         n = len(prices)
         fft = np.fft.fft(prices)[:max_freq+1] / n
         zero = fft[0].real
-        freq, wave = max(enumerate(fft), key=lambda x: x[0] and abs(x[1]))
+        freq, wave = max(enumerate(fft), key=lambda x: x[0] * abs(x[1]))
         val = lambda x: np.real(wave * (np.cos(x*freq*2*np.pi/n) + 1j * np.sin(x*freq*2*np.pi/n)))*2
         wave_fit = self.WaveFit(zero, freq, abs(wave)*2, np.angle(wave) % (2*np.pi))
         wave_fit.prices = times,  [zero + val(i) for i in range(n)]
