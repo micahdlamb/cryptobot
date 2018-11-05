@@ -10,7 +10,7 @@ from email.utils import make_msgid
 
 import numpy as np
 import matplotlib
-if platform.system == 'Linux':
+if platform.system() == 'Linux':
     matplotlib.use('Agg') # So I don't need tkinter
 import matplotlib.pyplot as plt
 
