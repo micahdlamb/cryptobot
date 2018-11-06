@@ -38,8 +38,6 @@ def main():
             try:
                 holding = get_holding_coin()
                 tickers = binance.fetch_tickers()
-                market_delta = np.average([v['percentage'] for k, v in tickers.items() if k.endswith('/BTC')])
-                print(f"24 hour alt coin change: {market_delta}%")
 
                 #ignore = {'HOT', 'DENT', 'NPXS', 'KEY', 'SC', 'CDT', 'QTUM', 'TNB', 'VET', 'MFT', 'XVG'}
                 tick_size = lambda symbol: 10 ** -binance.markets[symbol]['precision']['price'] / tickers[symbol]['last']
@@ -48,6 +46,9 @@ def main():
                            market['active'] and market['quote'] == 'BTC'
                            and tick_size(symbol) < .001
                            and tickers[symbol]['quoteVolume'] > 50)]
+
+                market_delta = np.average([tickers[symbol]['percentage'] for symbol in symbols])
+                print(f"24 hour alt coin change: {market_delta}% ({len(symbols)} coins)")
 
                 class Coin(collections.namedtuple("Coin", "name symbol plots")): pass
                 coins = [Coin(symbol.split('/')[0], symbol, {}) for symbol in symbols]
@@ -130,7 +131,8 @@ def get_best_coin(coins):
         coin.amp  = wave_fit.amp / coin.price
         coin.freq = wave_fit.freq
         wave_length = hours/wave_fit.freq
-        coin.wait  = unmix(2*np.pi - wave_fit.phase, 0, 2*np.pi) * wave_length
+        #coin.wait  = unmix(2*np.pi - wave_fit.phase, 0, 2*np.pi) * wave_length
+        coin.wait = wave_length/2
         coin.phase = unmix(abs(np.pi - wave_fit.phase), np.pi, 0)*2 -1
         last_wave_candles = candles[-int(wave_length*candles_per_hour):]
         zero = last_wave_candles.avg_price
@@ -153,6 +155,7 @@ def get_best_coin(coins):
         coin.plots["wave"] = times, [price+zero-wave_fit.zero for price in prices], dict(linestyle='--')
         good_coins.append(coin)
 
+    if not good_coins: return None
     good_coins.sort(key=lambda coin: coin.gain, reverse=True)
     col  = lambda s: s.ljust(6)
     rcol = lambda n: str(round(n, 2)).ljust(6)
