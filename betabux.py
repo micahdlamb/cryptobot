@@ -60,7 +60,7 @@ def main():
                         best = get_best_coin(coins)
 
                         if not best:
-                            time.sleep(5*60)
+                            time.sleep(10*60)
                             continue
 
                         if best is btc:
@@ -132,7 +132,7 @@ def get_best_coin(coins):
         coin.freq = wave_fit.freq
         wave_length = hours/wave_fit.freq
         #coin.wait  = unmix(2*np.pi - wave_fit.phase, 0, 2*np.pi) * wave_length
-        coin.wait = wave_length/2
+        coin.wait = max(wave_length/2, 2)
         coin.phase = unmix(abs(np.pi - wave_fit.phase), np.pi, 0)*2 -1
         last_wave_candles = candles[-int(wave_length*candles_per_hour):]
         zero = last_wave_candles.avg_price
@@ -173,7 +173,7 @@ def get_best_coin(coins):
         #plt.show()
 
     best = good_coins[0]
-    if best.gain < .03:
+    if best.gain < .025:
         print(f"{best.name} not good enough")
         return None
 
