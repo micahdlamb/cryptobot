@@ -173,7 +173,7 @@ def get_best_coin(coins):
         #plt.show()
 
     best = good_coins[0]
-    if best.gain < .03:
+    if best.gain < .015:
         print(f"{best.name} not good enough")
         return None
 
@@ -471,6 +471,7 @@ def get_balance():
     tickers = binance.fetch_tickers()
     tradeable = lambda coin: coin == 'BTC' or f"{coin}/BTC" in tickers
     balance = binance.fetch_balance()
+    del balance['BNB'] # Used for fees not trading
     balance = {coin: info for coin, info in balance.items() if tradeable(coin)}
     
     Coin = collections.namedtuple("Coin", "name amount amount_free amount_used btc btc_free usdt")
