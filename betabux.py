@@ -45,7 +45,7 @@ def main():
                 symbols = [symbol for symbol, market in binance.markets.items() if symbol in keep or (
                            market['active'] and market['quote'] == 'BTC'
                            and tick_size(symbol) < .001
-                           and tickers[symbol]['quoteVolume'] > 50)]
+                           and tickers[symbol]['quoteVolume'] > 25)]
 
                 market_delta = np.average([tickers[symbol]['percentage'] for symbol in symbols])
                 print(f"24 hour alt coin change: {market_delta}% ({len(symbols)} coins)")
@@ -125,14 +125,14 @@ def get_best_coin(coins):
         val2 = np.polyval(fit2, fit_time)
         coin.lt = (min(val0, val1, val2) - coin.price) / coin.price
 
-        hours = 12
+        hours = 16
         wave_candles = candles[-hours*candles_per_hour:]
-        wave_fit = wave_candles.wavefit(max_freq=3)
+        wave_fit = wave_candles.wavefit(slice(2, 5))
         coin.amp  = wave_fit.amp / coin.price
         coin.freq = wave_fit.freq
         wave_length = hours/wave_fit.freq
         #coin.wait  = unmix(2*np.pi - wave_fit.phase, 0, 2*np.pi) * wave_length
-        coin.wait = max(wave_length/2, 2)
+        coin.wait = wave_length/2
         coin.phase = unmix(abs(np.pi - wave_fit.phase), np.pi, 0)*2 -1
         last_wave_candles = candles[-int(wave_length*candles_per_hour):]
         zero = last_wave_candles.avg_price
@@ -173,7 +173,7 @@ def get_best_coin(coins):
         #plt.show()
 
     best = good_coins[0]
-    if best.gain < .025:
+    if best.gain < .03:
         print(f"{best.name} not good enough")
         return None
 
@@ -186,11 +186,11 @@ def hold_coin_while_gaining(coin):
     cell = lambda s: s.ljust(9)
     print(cell("y'"), cell("rate"), cell('gain'))
     while True:
-        candles = Candles(coin.symbol, '1m', limit=15)
+        candles = Candles(coin.symbol, '3m', limit=10)
         deriv = np.polyder(candles.polyfit(2))
         now  = np.polyval(deriv, candles.end_time)      / start_price
         soon = np.polyval(deriv, candles.end_time+1/12) / start_price
-        real = candles[-3:].rate / start_price
+        real = candles[-2:].rate / start_price
         gain = (binance.fetch_ticker(coin.symbol)['last'] - start_price) / start_price
         print(cell(f"{percentage(now)}/h"), cell(f"{percentage(real)}/h"), cell(percentage(gain)))
 
@@ -401,12 +401,12 @@ class Candles(list):
 
     class WaveFit(collections.namedtuple("Wave", "zero freq amp phase")): pass
 
-    def wavefit(self, max_freq):
+    def wavefit(self, freq_slice):
         times, prices = self.prices
         n = len(prices)
-        fft = np.fft.fft(prices)[:max_freq+1] / n
+        fft = np.fft.fft(prices)[freq_slice] / n
         zero = fft[0].real
-        freq, wave = max(enumerate(fft), key=lambda x: x[0] * abs(x[1]))
+        freq, wave = max(enumerate(fft), key=lambda x: abs(x[1]))
         val = lambda x: np.real(wave * (np.cos(x*freq*2*np.pi/n) + 1j * np.sin(x*freq*2*np.pi/n)))*2
         wave_fit = self.WaveFit(zero, freq, abs(wave)*2, np.angle(wave) % (2*np.pi))
         wave_fit.prices = times,  [zero + val(i) for i in range(n)]
