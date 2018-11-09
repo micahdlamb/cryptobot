@@ -407,6 +407,7 @@ class Candles(list):
         fft = np.fft.fft(prices)[freq_slice] / n
         zero = fft[0].real
         freq, wave = max(enumerate(fft), key=lambda x: abs(x[1]))
+        freq += freq_slice.start
         val = lambda x: np.real(wave * (np.cos(x*freq*2*np.pi/n) + 1j * np.sin(x*freq*2*np.pi/n)))*2
         wave_fit = self.WaveFit(zero, freq, abs(wave)*2, np.angle(wave) % (2*np.pi))
         wave_fit.prices = times,  [zero + val(i) for i in range(n)]
