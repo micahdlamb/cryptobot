@@ -140,7 +140,7 @@ def get_best_coin(coins):
     print(col(''), col('gain'), col('amp'), col('freq'), col('phase'), col('error'))
     for coin in good_coins[:5]:
         print(col(coin.name), pcol(coin.gain), pcol(coin.amp), rcol(coin.freq), rcol(coin.phase), rcol(coin.error))
-        show_plots(coin)
+        #show_plots(coin)
 
     best = good_coins[0]
     if best.gain < .0015:
@@ -229,10 +229,10 @@ def trade_coin(from_coin, to_coin, max_change=None):
         rate = Candles(symbol, '1m', limit=5).rate
 
         if side == 'buy':
-            price  = round_price_down(symbol, min(ask_price*1.002, bid_price + rate/30))
+            price  = round_price_down(symbol, min(ask_price*1.001, bid_price + rate/30))
             amount = binance.amount_to_lots(symbol, holding_amount / price)
         else:
-            price  = round_price_up  (symbol, max(bid_price*.998, ask_price + rate/30))
+            price  = round_price_up  (symbol, max(bid_price*.999, ask_price + rate/30))
             amount = holding_amount
 
         if max_change:
