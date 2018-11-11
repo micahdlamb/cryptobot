@@ -60,7 +60,7 @@ def main():
                         best = get_best_coin(coins)
 
                         if not best:
-                            time.sleep(10*60)
+                            time.sleep(5*60)
                             continue
 
                         if best is btc:
@@ -77,7 +77,7 @@ def main():
 
                     result = f"BTC -> {best.name} -> BTC"
                     with record_plot(best, 'hold'):
-                        timeout, poll = best.wait * 60, 10
+                        timeout, poll = best.wait * 60, 5
                         order = create_order_and_wait(best.symbol, 'sell', order['amount'], best.crest, timeout, poll)
 
                     if order['status'] != 'closed':
@@ -112,44 +112,26 @@ def get_best_coin(coins):
     tickers = binance.fetch_tickers()
     for coin in coins:
         coin.price = tickers[coin.symbol]['last']
-
-        candles_per_hour = 4
-        candles = Candles(coin.symbol, '15m', limit=2*24*candles_per_hour)
-        times, prices = candles.prices
-        fit0 = np.polyfit(times, prices, 0)
-        fit1 = np.polyfit(times, prices, 1)
-        fit2 = np.polyfit(times, prices, 2)
-        fit_time = candles.end_time+6
-        val0 = np.polyval(fit0, fit_time)
-        val1 = np.polyval(fit1, fit_time)
-        val2 = np.polyval(fit2, fit_time)
-        coin.lt = (min(val0, val1, val2) - coin.price) / coin.price
-
-        hours = 16
-        wave_candles = candles[-hours*candles_per_hour:]
-        wave_fit = wave_candles.wavefit(slice(2, 5))
+        candles_per_hour = 12
+        hours = 4
+        candles = Candles(coin.symbol, '5m', limit=hours*candles_per_hour)
+        wave_fit = candles.wavefit(slice(2, 5))
         coin.amp  = wave_fit.amp / coin.price
         coin.freq = wave_fit.freq
         wave_length = hours/wave_fit.freq
-        #coin.wait  = unmix(2*np.pi - wave_fit.phase, 0, 2*np.pi) * wave_length
-        coin.wait = wave_length/2
+        coin.wait  = unmix(2*np.pi - wave_fit.phase, 0, 2*np.pi) * wave_length
         coin.phase = unmix(abs(np.pi - wave_fit.phase), np.pi, 0)*2 -1
+        coin.error = wave_fit.rmse*1e3 / coin.price
         last_wave_candles = candles[-int(wave_length*candles_per_hour):]
         zero = last_wave_candles.avg_price
         coin.crest  = zero + wave_fit.amp
         coin.trough = zero - wave_fit.amp
         phase_check = clamp(unmix(coin.price, coin.crest, coin.trough), 0, 1)*2 -1
         phase = min(coin.phase, phase_check)
-        coin.wave = coin.amp * coin.freq * phase
-
-        coin.gain = coin.lt + coin.wave
+        coin.gain = coin.amp * coin.freq * phase / (1 + coin.error)
         if coin.gain < 0: continue
 
-        coin.plots["actual"] = times, prices, dict(linestyle='-')
-        fit_times = times + [fit_time]
-        coin.plots["0 fit"] = fit_times, np.polyval(fit0, fit_times), dict(linestyle='--')
-        coin.plots["1 fit"] = fit_times, np.polyval(fit1, fit_times), dict(linestyle='--')
-        coin.plots["2 fit"] = fit_times, np.polyval(fit2, fit_times), dict(linestyle='--')
+        coin.plots["actual"] = *candles.prices, dict(linestyle='-')
         times, prices = wave_fit.prices
         coin.plots["zero"] = [times[-len(last_wave_candles)], times[-1]], [zero, zero], dict(linestyle='--')
         coin.plots["wave"] = times, [price+zero-wave_fit.zero for price in prices], dict(linestyle='--')
@@ -160,20 +142,20 @@ def get_best_coin(coins):
     col  = lambda s: s.ljust(6)
     rcol = lambda n: str(round(n, 2)).ljust(6)
     pcol = lambda n: percentage(n).ljust(6)
-    print(col(''), col('gain'), col('lt'), col('wave'), col('amp'), col('freq'), col('phase'))
+    print(col(''), col('gain'), col('amp'), col('freq'), col('phase'), col('error'))
     for coin in good_coins[:10]:
-        print(col(coin.name), pcol(coin.gain), pcol(coin.lt), pcol(coin.wave), pcol(coin.amp), rcol(coin.freq), rcol(coin.phase))
+        print(col(coin.name), pcol(coin.gain), pcol(coin.amp), rcol(coin.freq), rcol(coin.phase), rcol(coin.error))
 
-        #plt.figure()
-        #plt.title(coin.name)
-        #now_hours = datetime.datetime.now().timestamp() / 3600
-        #for name, (x, y, kwds) in coin.plots.items():
-        #    x = [t-now_hours for t in x]
-        #    plt.plot(x, y, label=name, **kwds)
-        #plt.show()
+        plt.figure()
+        plt.title(coin.name)
+        now_hours = datetime.datetime.now().timestamp() / 3600
+        for name, (x, y, kwds) in coin.plots.items():
+            x = [t-now_hours for t in x]
+            plt.plot(x, y, label=name, **kwds)
+        plt.show()
 
     best = good_coins[0]
-    if best.gain < .015:
+    if best.gain < .0015:
         print(f"{best.name} not good enough")
         return None
 
@@ -399,18 +381,19 @@ class Candles(list):
     def polyfit(self, deg, **kwds):
         return np.polyfit(*self.prices, deg, **kwds)
 
-    class WaveFit(collections.namedtuple("Wave", "zero freq amp phase")): pass
+    class WaveFit(collections.namedtuple("Wave", "zero freq amp phase rmse prices")): pass
 
     def wavefit(self, freq_slice):
         times, prices = self.prices
         n = len(prices)
-        fft = np.fft.fft(prices)[freq_slice] / n
-        zero = fft[0].real
-        freq, wave = max(enumerate(fft), key=lambda x: abs(x[1]))
+        fft = np.fft.fft(prices)
+        zero = fft[0].real / n
+        freq, wave = max(enumerate(fft[freq_slice] / n), key=lambda x: abs(x[1]))
         freq += freq_slice.start
         val = lambda x: np.real(wave * (np.cos(x*freq*2*np.pi/n) + 1j * np.sin(x*freq*2*np.pi/n)))*2
-        wave_fit = self.WaveFit(zero, freq, abs(wave)*2, np.angle(wave) % (2*np.pi))
-        wave_fit.prices = times,  [zero + val(i) for i in range(n)]
+        values = zero + np.array([val(i) for i in range(n)])
+        rmse = np.sqrt(((values - prices) ** 2).mean())
+        wave_fit = self.WaveFit(zero, freq, abs(wave)*2, np.angle(wave) % (2*np.pi), rmse, (times, values))
         return wave_fit
 
     @property
