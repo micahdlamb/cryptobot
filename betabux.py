@@ -171,7 +171,7 @@ def hold_till_crest(coin):
 
         if phase > .85:
             try:
-                trade_coin(coin.name, 'BTC')
+                trade_coin(coin.name, 'BTC', avoid_partial_fill=False)
                 break
             except TimeoutError as err:
                 print(err)
@@ -206,7 +206,7 @@ def _record_order(order):
     trade_log.append(order)
 
 
-def trade_coin(from_coin, to_coin, max_change=None):
+def trade_coin(from_coin, to_coin, max_change=None, avoid_partial_fill=True):
     assert from_coin != to_coin, to_coin
     print(f"Transferring {from_coin} to {to_coin}...")
 
@@ -249,6 +249,9 @@ def trade_coin(from_coin, to_coin, max_change=None):
         order = create_order_and_wait(symbol, side, amount, price)
         if order['status'] == 'closed':
             return order
+
+        if not avoid_partial_fill:
+            break
 
         filled += order['filled']
         if filled == 0:
