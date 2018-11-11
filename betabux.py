@@ -146,13 +146,13 @@ def get_best_coin(coins):
     for coin in good_coins[:10]:
         print(col(coin.name), pcol(coin.gain), pcol(coin.amp), rcol(coin.freq), rcol(coin.phase), rcol(coin.error))
 
-        plt.figure()
-        plt.title(coin.name)
-        now_hours = datetime.datetime.now().timestamp() / 3600
-        for name, (x, y, kwds) in coin.plots.items():
-            x = [t-now_hours for t in x]
-            plt.plot(x, y, label=name, **kwds)
-        plt.show()
+        #plt.figure()
+        #plt.title(coin.name)
+        #now_hours = datetime.datetime.now().timestamp() / 3600
+        #for name, (x, y, kwds) in coin.plots.items():
+        #    x = [t-now_hours for t in x]
+        #    plt.plot(x, y, label=name, **kwds)
+        #plt.show()
 
     best = good_coins[0]
     if best.gain < .0015:
