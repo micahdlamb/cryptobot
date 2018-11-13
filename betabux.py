@@ -110,7 +110,9 @@ def get_best_coin(coins):
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
-        coin.price = tickers[coin.symbol]['last']
+        ticker = tickers[coin.symbol]
+        coin.price  = ticker['last']
+        coin.vol    = math.log10(ticker['quoteVolume'])
         candles = Candles(coin.symbol, timeFrame, limit=hours*candles_per_hour)
         wave_fit = candles.wavefit(slice(2, 5))
         coin.amp  = wave_fit.amp / coin.price
@@ -123,7 +125,7 @@ def get_best_coin(coins):
         coin.trough = wave_fit.zero - wave_fit.amp
         phase_check = clamp(unmix(coin.price, coin.crest, coin.trough), 0, 1)*2 -1
         phase = min(coin.phase, phase_check)
-        coin.gain = coin.amp * coin.freq * phase / (1 + coin.error)
+        coin.gain = coin.vol * coin.amp * coin.freq * phase / (1 + coin.error)
         if coin.gain < 0: continue
 
         coin.plots["actual"] = *candles.prices, dict(linestyle='-')
@@ -137,13 +139,13 @@ def get_best_coin(coins):
     col  = lambda s: s.ljust(6)
     rcol = lambda n: str(round(n, 2)).ljust(6)
     pcol = lambda n: percentage(n).ljust(6)
-    print(col(''), col('gain'), col('amp'), col('freq'), col('phase'), col('error'))
+    print(col(''), col('gain'), col('vol'), col('amp'), col('freq'), col('phase'), col('error'))
     for coin in good_coins[:5]:
-        print(col(coin.name), pcol(coin.gain), pcol(coin.amp), rcol(coin.freq), rcol(coin.phase), rcol(coin.error))
+        print(col(coin.name), pcol(coin.gain), rcol(coin.vol), pcol(coin.amp), rcol(coin.freq), rcol(coin.phase), rcol(coin.error))
         #show_plots(coin)
 
     best = good_coins[0]
-    if best.gain < .0015:
+    if best.gain < .0035:
         print(f"{best.name} not good enough")
         return None
 
@@ -219,7 +221,7 @@ def trade_coin(from_coin, to_coin, max_change=None, avoid_partial_fill=True):
         symbol = f"{from_coin}/{to_coin}"
 
     filled = 0
-    for i in range(6):
+    for i in range(8):
         book = binance.fetch_order_book(symbol, limit=5)
         bid_price = book['bids'][0][0]
         ask_price = book['asks'][0][0]
