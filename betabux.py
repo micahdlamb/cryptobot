@@ -36,36 +36,25 @@ def main():
         start_time = time.time()
         with io.StringIO() as log, contextlib.redirect_stdout(Tee(log, sys.stdout)):
             try:
-                holding = get_holding_coin()
                 tickers = binance.fetch_tickers()
-
-                #ignore = {'HOT', 'DENT', 'NPXS', 'KEY', 'SC', 'CDT', 'QTUM', 'TNB', 'VET', 'MFT', 'XVG'}
-                tick_size = lambda symbol: 10 ** -binance.markets[symbol]['precision']['price'] / tickers[symbol]['last']
-                keep = {'BTC/USDT', 'TUSD/BTC' f'{holding.name}/BTC'}
-                symbols = [symbol for symbol, market in binance.markets.items() if symbol in keep or (
-                           market['active'] and market['quote'] == 'BTC'
-                           and tick_size(symbol) < .001
-                           and tickers[symbol]['quoteVolume'] > 25)]
+                symbols = [symbol for symbol, market in binance.markets.items() if market['active']
+                           and market['quote'] == 'BTC'
+                           and 10 ** -market['precision']['price'] / tickers[symbol]['last'] < .001
+                           and tickers[symbol]['quoteVolume'] > 50]
 
                 market_delta = np.average([tickers[symbol]['percentage'] for symbol in symbols])
                 print(f"24 hour alt coin change: {market_delta}% ({len(symbols)} coins)")
 
                 class Coin(collections.namedtuple("Coin", "name symbol plots")): pass
-                coins = [Coin(symbol.split('/')[0], symbol, {}) for symbol in symbols]
-                hodl = next(c for c in coins if c.name == holding.name)
-                btc  = next(c for c in coins if c.name == 'BTC')
+                holding = get_holding_coin()
 
-                if hodl is btc:
+                if holding.name == 'BTC':
                     while True:
+                        coins = [Coin(symbol.split('/')[0], symbol, {}) for symbol in symbols]
                         best = get_best_coin(coins)
 
                         if not best:
                             time.sleep(5*60)
-                            continue
-
-                        if best is btc:
-                            print('Hold BTC')
-                            time.sleep(30)
                             continue
 
                         try:
@@ -78,6 +67,7 @@ def main():
                     result = f"BTC -> {best.name} -> BTC"
 
                 else:
+                    hodl = Coin(holding.name, f"{holding.name}/BTC", {})
                     result = f"{hodl.name} -> BTC"
 
                 with record_plot(hodl, 'hold'):
@@ -101,7 +91,7 @@ def main():
 
 
 timeFrame = '5m'
-hours = 4
+hours = 6
 candles_per_hour = 12
 
 
@@ -114,7 +104,7 @@ def get_best_coin(coins):
         coin.price  = ticker['last']
         coin.vol    = math.log10(ticker['quoteVolume'])
         candles = Candles(coin.symbol, timeFrame, limit=hours*candles_per_hour)
-        wave_fit = candles.wavefit(slice(2, 5))
+        wave_fit = candles.wavefit(slice(1, 5))
         coin.amp  = wave_fit.amp / coin.price
         coin.freq = wave_fit.freq
         coin.wave_length = hours/wave_fit.freq
@@ -145,7 +135,7 @@ def get_best_coin(coins):
         #show_plots(coin)
 
     best = good_coins[0]
-    if best.gain < .0035:
+    if best.gain < .005:
         print(f"{best.name} not good enough")
         return None
 
