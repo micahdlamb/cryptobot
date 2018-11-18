@@ -91,9 +91,7 @@ def main():
 
 
 timeFrame = '5m'
-hours = 6
 candles_per_hour = 12
-
 
 def get_best_coin(coins):
     print('Looking for best coin...')
@@ -103,39 +101,38 @@ def get_best_coin(coins):
         ticker = tickers[coin.symbol]
         coin.price  = ticker['last']
         coin.vol    = math.log10(ticker['quoteVolume'])
-        candles = Candles(coin.symbol, timeFrame, limit=hours*candles_per_hour)
-        wave_fit = candles.wavefit(slice(1, 5))
-        coin.amp  = wave_fit.amp / coin.price
-        coin.freq = wave_fit.freq
-        coin.wave_length = hours/wave_fit.freq
-        #coin.wait  = unmix(2*np.pi - wave_fit.phase, 0, 2*np.pi) * coin.wave_length
-        coin.phase = math.cos(wave_fit.phase - math.pi)
-        coin.error = wave_fit.rmse*1e3 / coin.price
-        coin.crest  = wave_fit.zero + wave_fit.amp
-        coin.trough = wave_fit.zero - wave_fit.amp
-        phase_check = clamp(unmix(coin.price, coin.crest, coin.trough), 0, 1)*2 -1
-        phase = min(coin.phase, phase_check)
-        coin.gain = coin.vol * coin.amp * coin.freq * phase / (1 + coin.error)
+        candles = Candles(coin.symbol, timeFrame, limit=18*candles_per_hour)
+        hours = [6, 12, 18]
+        wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(1, 4)) for h in hours]
+        for fit, h in zip(wave_fits, hours): fit.hours = h
+        phase      = lambda fit: math.cos(fit.phase - math.pi)
+        trough_mix = lambda fit: unmix(coin.price, fit.zero+fit.amp, fit.zero-fit.amp)*2 -1
+        val   = lambda fit: fit.amp * fit.freq * np.average([phase(fit), trough_mix(fit)]) / (coin.price + fit.rmse*1e2)
+        coin.gain = np.average([val(fit) for fit in wave_fits]) * coin.vol
         if coin.gain < 0: continue
+        good_coins.append(coin)
+
+        best_fit = max(wave_fits, key=lambda fit: val(fit))
+        coin.wave_length = best_fit.hours/best_fit.freq
 
         coin.plots["actual"] = *candles.prices, dict(linestyle='-')
-        times, prices = wave_fit.prices
-        coin.plots["zero"] = [times[0], times[-1]], [wave_fit.zero, wave_fit.zero], dict(linestyle='--')
-        coin.plots["wave"] = times, prices, dict(linestyle='--')
-        good_coins.append(coin)
+        for fit in wave_fits:
+            times, prices = fit.prices
+            #coin.plots[f"zero {fit.hours}"] = [times[0], times[-1]], [fit.zero, fit.zero], dict(linestyle='--')
+            coin.plots[f"wave {fit.hours}"] = times, prices, dict(linestyle='--')
 
     if not good_coins: return None
     good_coins.sort(key=lambda coin: coin.gain, reverse=True)
     col  = lambda s: s.ljust(6)
     rcol = lambda n: str(round(n, 2)).ljust(6)
     pcol = lambda n: percentage(n).ljust(6)
-    print(col(''), col('gain'), col('vol'), col('amp'), col('freq'), col('phase'), col('error'))
+    print(col(''), col('gain'), col('vol'), col('wave length'))
     for coin in good_coins[:5]:
-        print(col(coin.name), pcol(coin.gain), rcol(coin.vol), pcol(coin.amp), rcol(coin.freq), rcol(coin.phase), rcol(coin.error))
+        print(col(coin.name), pcol(coin.gain), rcol(coin.vol), coin.wave_length)
         #show_plots(coin)
 
     best = good_coins[0]
-    if best.gain < .005:
+    if best.gain < .03:
         print(f"{best.name} not good enough")
         return None
 
@@ -221,10 +218,10 @@ def trade_coin(from_coin, to_coin, max_change=None, avoid_partial_fill=True):
         rate = Candles(symbol, '1m', limit=5).rate
 
         if side == 'buy':
-            price  = round_price_down(symbol, min(ask_price*1.001, bid_price + rate/30))
+            price  = round_price_down(symbol, min(ask_price*1.001, bid_price + rate/20))
             amount = binance.amount_to_lots(symbol, holding_amount / price)
         else:
-            price  = round_price_up  (symbol, max(bid_price*.999, ask_price + rate/30))
+            price  = round_price_up  (symbol, max(bid_price*.999, ask_price + rate/20))
             amount = holding_amount
 
         if max_change:
