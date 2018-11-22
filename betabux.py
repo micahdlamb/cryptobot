@@ -106,7 +106,8 @@ def get_best_coin(coins):
         wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(2, 4)) for h in hours]
         for fit, h in zip(wave_fits, hours): fit.hours = h
         phase      = lambda fit: math.cos(fit.phase - math.pi)
-        val   = lambda fit: fit.amp * fit.freq * phase(fit) / (coin.price + fit.rmse*1e3)
+        trough_mix = lambda fit: clamp(unmix(coin.price, fit.zero+fit.amp, fit.zero-fit.amp), 0, 1) * 2 - 1
+        val   = lambda fit: fit.amp * fit.freq * min(phase(fit), trough_mix(fit)) / (coin.price + fit.rmse*1e3)
         coin.wave = np.average([val(fit) for fit in wave_fits])
 
         zero = np.average([fit.zero for fit in wave_fits])
