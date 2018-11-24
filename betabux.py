@@ -111,10 +111,10 @@ def get_best_coin(coins):
         coin.amp   = fit.amp / coin.price
         coin.freq  = fit.freq
         coin.phase = min(math.cos(fit.phase - math.pi), clamp(unmix(coin.price, fit.zero+fit.amp, fit.zero-fit.amp), 0, 1) * 2 - 1)
-        coin.error = fit.rmse * 5e2 / coin.price
+        coin.error = fit.rmse / coin.price
         coin.wave_length = fit.hours / fit.freq
 
-        coin.gain = coin.vol * coin.mix * coin.amp * coin.freq * coin.phase / coin.error
+        coin.gain = coin.vol * coin.mix * coin.amp * coin.freq * coin.phase / (1+(coin.error*1e2)**2)
         if coin.gain < 0: continue
         good_coins.append(coin)
 
@@ -125,16 +125,16 @@ def get_best_coin(coins):
 
     if not good_coins: return None
     good_coins.sort(key=lambda coin: coin.gain, reverse=True)
-    col  = lambda s: str(s).ljust(6)
-    rcol = lambda n: str(round(n, 2)).ljust(6)
+    col  = lambda s,c=6: str(s).ljust(c)
+    rcol = lambda n,c=6: str(round(n, 2)).ljust(c)
     pcol = lambda n: percentage(n).ljust(6)
-    print(col(''), col('gain'), col('vol'), col('mix'), col('amp'), col('freq'), col('phase'), col('error'), col('wave length'))
+    print(col(''), col('gain'), col('vol', 4), col('mix',4), col('amp'), col('freq',4), col('phase'), col('error'))
     for coin in good_coins[:5]:
-        print(col(coin.name), pcol(coin.gain), rcol(coin.vol), rcol(coin.mix), pcol(coin.amp), col(coin.freq), rcol(coin.phase), rcol(coin.error), rcol(coin.wave_length))
+        print(col(coin.name), pcol(coin.gain), rcol(coin.vol, 4), rcol(coin.mix,4), pcol(coin.amp), col(coin.freq,4), rcol(coin.phase), pcol(coin.error))
         #show_plots(coin)
 
     best = good_coins[0]
-    if best.gain < .0035:
+    if best.gain < .02:
         print(f"{best.name} not good enough")
         return None
 
