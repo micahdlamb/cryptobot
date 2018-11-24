@@ -111,7 +111,7 @@ def get_best_coin(coins):
         coin.amp   = fit.amp / coin.price
         coin.freq  = fit.freq
         coin.phase = min(math.cos(fit.phase - math.pi), clamp(unmix(coin.price, fit.zero+fit.amp, fit.zero-fit.amp), 0, 1) * 2 - 1)
-        coin.error = fit.rmse * 1e3 / coin.price
+        coin.error = fit.rmse * 5e2 / coin.price
         coin.wave_length = fit.hours / fit.freq
 
         coin.gain = coin.vol * coin.mix * coin.amp * coin.freq * coin.phase / coin.error
@@ -134,7 +134,7 @@ def get_best_coin(coins):
         #show_plots(coin)
 
     best = good_coins[0]
-    if best.gain < .0025:
+    if best.gain < .0035:
         print(f"{best.name} not good enough")
         return None
 
