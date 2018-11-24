@@ -102,42 +102,39 @@ def get_best_coin(coins):
         coin.price  = ticker['last']
         coin.vol    = math.log10(ticker['quoteVolume'])
         candles = Candles(coin.symbol, timeFrame, limit=18*candles_per_hour)
+        coin.mix = unmix(coin.price, candles.max, candles.min)
         hours = [6, 12, 18]
         wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(2, 4)) for h in hours]
         for fit, h in zip(wave_fits, hours): fit.hours = h
-        phase      = lambda fit: math.cos(fit.phase - math.pi)
-        trough_mix = lambda fit: clamp(unmix(coin.price, fit.zero+fit.amp, fit.zero-fit.amp), 0, 1) * 2 - 1
-        val   = lambda fit: fit.amp * fit.freq * min(phase(fit), trough_mix(fit)) / (coin.price + fit.rmse*1e3)
-        coin.wave = np.average([val(fit) for fit in wave_fits])
+        fit = max(wave_fits, key=lambda fit: fit.amp * fit.freq)
+        coin.hours = fit.hours
+        coin.amp   = fit.amp / coin.price
+        coin.freq  = fit.freq
+        coin.phase = min(math.cos(fit.phase - math.pi), clamp(unmix(coin.price, fit.zero+fit.amp, fit.zero-fit.amp), 0, 1) * 2 - 1)
+        coin.error = fit.rmse * 1e3 / coin.price
+        coin.wave_length = fit.hours / fit.freq
 
-        zero = np.average([fit.zero for fit in wave_fits])
-        coin.drop = (zero - coin.price) / coin.price
-
-        coin.gain = coin.vol * coin.wave
+        coin.gain = coin.vol * coin.mix * coin.amp * coin.freq * coin.phase / coin.error
         if coin.gain < 0: continue
         good_coins.append(coin)
 
-        best_fit = max(wave_fits, key=lambda fit: val(fit))
-        coin.wave_length = best_fit.hours/best_fit.freq
-
         coin.plots["actual"] = *candles.prices, dict(linestyle='-')
-        for fit in wave_fits:
-            times, prices = fit.prices
-            #coin.plots[f"zero {fit.hours}"] = [times[0], times[-1]], [fit.zero, fit.zero], dict(linestyle='--')
-            coin.plots[f"wave {fit.hours}"] = times, prices, dict(linestyle='--')
+        times, prices = fit.prices
+        coin.plots[f"zero {fit.hours}"] = [times[0], times[-1]], [fit.zero, fit.zero], dict(linestyle='--')
+        coin.plots[f"wave {fit.hours}"] = times, prices, dict(linestyle='--')
 
     if not good_coins: return None
     good_coins.sort(key=lambda coin: coin.gain, reverse=True)
-    col  = lambda s: s.ljust(6)
+    col  = lambda s: str(s).ljust(6)
     rcol = lambda n: str(round(n, 2)).ljust(6)
     pcol = lambda n: percentage(n).ljust(6)
-    print(col(''), col('gain'), col('vol'), col('wave'), col('drop'), col('wave length'))
+    print(col(''), col('gain'), col('vol'), col('mix'), col('amp'), col('freq'), col('phase'), col('error'), col('wave length'))
     for coin in good_coins[:5]:
-        print(col(coin.name), pcol(coin.gain), rcol(coin.vol), pcol(coin.wave), pcol(coin.drop), coin.wave_length)
+        print(col(coin.name), pcol(coin.gain), rcol(coin.vol), rcol(coin.mix), pcol(coin.amp), col(coin.freq), rcol(coin.phase), rcol(coin.error), rcol(coin.wave_length))
         #show_plots(coin)
 
     best = good_coins[0]
-    if best.gain < .003:
+    if best.gain < .005:
         print(f"{best.name} not good enough")
         return None
 
