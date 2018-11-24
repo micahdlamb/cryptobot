@@ -134,7 +134,7 @@ def get_best_coin(coins):
         #show_plots(coin)
 
     best = good_coins[0]
-    if best.gain < .005:
+    if best.gain < .0025:
         print(f"{best.name} not good enough")
         return None
 
