@@ -153,8 +153,8 @@ def hold_till_crest(coin):
         candles = Candles(coin.symbol, timeFrame, limit=int(wave_length*candles_per_hour))
         fit = candles.wavefit(slice(1, 3))
         phase = math.cos(fit.phase)
-        last_candle_mix = unmix(price, candles[-1:].min, candles[-1:].max)
-
+        try:    last_candle_mix = unmix(price, candles[-1:].min, candles[-1:].max)
+        except: last_candle_mix = .5
         print(cell(round(phase, 2)), cell(round(last_candle_mix, 2)), cell(percentage(gain)))
 
         #coin.plots["hold actual"] = *candles.prices, dict(linestyle='-')
