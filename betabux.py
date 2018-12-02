@@ -134,7 +134,7 @@ def get_best_coin(coins):
         #show_plots(coin)
 
     best = good_coins[0]
-    if best.gain < .02:
+    if best.gain < .015:
         print(f"{best.name} not good enough")
         return None
 
@@ -163,7 +163,7 @@ def hold_till_crest(coin):
         coin.plots["hold wave"] = times, prices, dict(linestyle='--')
         #show_plots(coin)
 
-        if min(phase, last_candle_mix) > .85:
+        if phase > .85 and last_candle_mix > .5:
             try:
                 trade_coin(coin.name, 'BTC', avoid_partial_fill=False)
                 break
