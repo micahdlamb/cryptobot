@@ -163,7 +163,7 @@ def hold_till_crest(coin):
         coin.plots["hold wave"] = times, prices, dict(linestyle='--')
         #show_plots(coin)
 
-        if phase > .85 and last_candle_mix > .65:
+        if phase > .75 and last_candle_mix >= .5:
             try:
                 trade_coin(coin.name, 'BTC', avoid_partial_fill=False)
                 break
