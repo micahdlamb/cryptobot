@@ -102,11 +102,12 @@ def get_best_coin(coins):
         coin.price  = ticker['last']
         coin.vol    = math.log10(ticker['quoteVolume'])
         candles = Candles(coin.symbol, timeFrame, limit=18*candles_per_hour)
-        coin.mix = unmix(coin.price, candles.max, candles.min)
+        #coin.mix = unmix(coin.price, candles.max, candles.min)
         hours = [6, 12, 18]
         wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(2, 4)) for h in hours]
         for fit, h in zip(wave_fits, hours): fit.hours = h
         fit = max(wave_fits, key=lambda fit: fit.amp * fit.freq)
+        coin.mix = unmix(coin.price, fit.candles.max, fit.candles.min)
         coin.hours = fit.hours
         coin.amp   = fit.amp / coin.price
         coin.freq  = fit.freq
@@ -145,7 +146,7 @@ def hold_till_crest(coin):
     print(f"====== Holding {coin.name} ======")
     start_price = binance.fetch_ticker(coin.symbol)['last']
     cell = lambda s: str(s).ljust(7)
-    print(cell("phase"), cell('lc mix'), cell('gain'))
+    print(cell("phase"), cell('mix'), cell('gain'))
     while True:
         price = binance.fetch_ticker(coin.symbol)['last']
         gain = (price - start_price) / start_price
@@ -161,7 +162,7 @@ def hold_till_crest(coin):
         coin.plots["hold wave"] = times, prices, dict(linestyle='--')
         #show_plots(coin)
 
-        if np.average([phase, crest_mix]) > .5:
+        if np.average([phase, crest_mix]) > .75:
             try:
                 trade_coin(coin.name, 'BTC', avoid_partial_fill=False)
                 break
