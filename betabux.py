@@ -107,7 +107,7 @@ def get_best_coin(coins):
         wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(2, 4)) for h in hours]
         for fit, h in zip(wave_fits, hours): fit.hours = h
         fit = max(wave_fits, key=lambda fit: fit.amp * fit.freq)
-        #coin.mix = unmix(coin.price, fit.candles.max, fit.candles.min)
+        coin.mix = unmix(coin.price, fit.candles.max, fit.candles.min)
         coin.hours = fit.hours
         coin.amp   = fit.amp / coin.price
         coin.freq  = fit.freq
