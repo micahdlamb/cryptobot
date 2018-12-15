@@ -145,7 +145,7 @@ def hold_till_crest(coin):
     print(f"====== Holding {coin.name} ======")
     start_price = binance.fetch_ticker(coin.symbol)['last']
     cell = lambda s: str(s).ljust(7)
-    print(cell("phase"), cell('mix'), cell('gain'))
+    print(cell("phase"), cell('mix'), cell('lc mix'), cell('gain'))
     while True:
         price = binance.fetch_ticker(coin.symbol)['last']
         gain = (price - start_price) / start_price
@@ -154,14 +154,11 @@ def hold_till_crest(coin):
         fit = candles.wavefit(slice(1, 3))
         phase = math.cos(fit.phase)
         crest_mix = clamp(unmix(price, fit.zero-fit.amp, fit.zero+fit.amp) * 2 - 1, -1, 1)
-        print(cell(round(phase, 2)), cell(round(crest_mix, 2)), cell(percentage(gain)))
+        try:    last_candle_mix = unmix(price, candles[-2:].min, candles[-2:].max)
+        except: last_candle_mix = .5
+        print(cell(round(phase, 2)), cell(round(crest_mix, 2)), cell(round(last_candle_mix, 2)), cell(percentage(gain)))
 
-        times, prices = fit.prices
-        coin.plots["hold zero"] = [times[0], times[-1]], [fit.zero, fit.zero], dict(linestyle='--')
-        coin.plots["hold wave"] = times, prices, dict(linestyle='--')
-        #show_plots(coin)
-
-        if np.average([phase, crest_mix]) > .75:
+        if np.average([phase, crest_mix]) > .75 and last_candle_mix >= .5:
             try:
                 trade_coin(coin.name, 'BTC', avoid_partial_fill=False)
                 break
@@ -169,6 +166,11 @@ def hold_till_crest(coin):
                 print(err)
         else:
             time.sleep(5*60)
+
+    times, prices = fit.prices
+    coin.plots["hold zero"] = [times[0], times[-1]], [fit.zero, fit.zero], dict(linestyle='--')
+    coin.plots["hold wave"] = times, prices, dict(linestyle='--')
+    #show_plots(coin)
 
 
 def market_buy(symbol, fraction_of_btc=.95):
