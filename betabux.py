@@ -114,7 +114,7 @@ def get_best_coin(coins):
         coin.mix = unmix(coin.price, last_wave.max, last_wave.min)
         coin.error = fit.rmse / coin.price
 
-        coin.gain = coin.vol * coin.amp * coin.freq * coin.phase * coin.mix / (1+(coin.error*1e2)**2)
+        coin.gain = coin.vol * coin.amp * coin.freq * coin.phase * coin.mix / (1+(coin.error*1e2))
         if coin.gain < 0: continue
         good_coins.append(coin)
 
