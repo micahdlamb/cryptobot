@@ -102,20 +102,19 @@ def get_best_coin(coins):
         coin.price  = ticker['last']
         coin.vol    = math.log10(ticker['quoteVolume'])
         candles = Candles(coin.symbol, timeFrame, limit=18*candles_per_hour)
-        #coin.mix = unmix(coin.price, candles.max, candles.min)
         hours = [6, 12, 18]
         wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(2, 4)) for h in hours]
         for fit, h in zip(wave_fits, hours): fit.hours = h
         fit = max(wave_fits, key=lambda fit: fit.amp * fit.freq)
-        coin.mix = unmix(coin.price, fit.candles.max, fit.candles.min)
-        coin.hours = fit.hours
         coin.amp   = fit.amp / coin.price
         coin.freq  = fit.freq
         coin.phase = math.cos(fit.phase-math.pi-.5)
-        coin.error = fit.rmse / coin.price
         coin.wave_length = fit.hours / fit.freq
+        last_wave = candles[-int(coin.wave_length*candles_per_hour):]
+        coin.mix = unmix(coin.price, last_wave.max, last_wave.min)
+        coin.error = fit.rmse / coin.price
 
-        coin.gain = coin.vol * coin.amp * coin.freq * coin.phase / (1+(coin.error*1e2)**2)
+        coin.gain = coin.vol * coin.amp * coin.freq * coin.phase * coin.mix / (1+(coin.error*1e2)**2)
         if coin.gain < 0: continue
         good_coins.append(coin)
 
@@ -129,9 +128,9 @@ def get_best_coin(coins):
     col  = lambda s,c=6: str(s).ljust(c)
     rcol = lambda n,c=6: str(round(n, 2)).ljust(c)
     pcol = lambda n: percentage(n).ljust(6)
-    print(col(''), col('gain'), col('vol', 4), col('mix',4), col('amp'), col('freq',4), col('phase'), col('error'))
+    print(col(''), col('gain'), col('vol', 4), col('amp'), col('freq',4), col('phase'), col('mix',4), col('error'))
     for coin in good_coins[:5]:
-        print(col(coin.name), pcol(coin.gain), rcol(coin.vol, 4), rcol(coin.mix,4), pcol(coin.amp), col(coin.freq,4), rcol(coin.phase), pcol(coin.error))
+        print(col(coin.name), pcol(coin.gain), rcol(coin.vol, 4), pcol(coin.amp), col(coin.freq,4), rcol(coin.phase), rcol(coin.mix,4), pcol(coin.error))
         #show_plots(coin)
 
     best = good_coins[0]
@@ -391,7 +390,7 @@ class Candles(list):
         freq += freq_slice.start
         val = lambda x: np.real(wave * (np.cos(x*freq*2*np.pi/n) + 1j * np.sin(x*freq*2*np.pi/n)))*2
         values = zero + np.array([val(i) for i in range(n)])
-        rmse = np.sqrt(((values - prices) ** 2).mean())
+        rmse = np.sqrt(((values - prices)**2).mean())
         wave_fit = self.WaveFit(zero, freq, abs(wave)*2, np.angle(wave) % (2*np.pi), rmse)
         wave_fit.candles = self
         wave_fit.prices  = (times, values)
