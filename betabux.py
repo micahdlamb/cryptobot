@@ -108,7 +108,7 @@ def get_best_coin(coins):
         fit = max(wave_fits, key=lambda fit: fit.amp * fit.freq)
         coin.amp   = fit.amp / coin.price
         coin.freq  = fit.freq
-        coin.phase = math.cos(fit.phase-math.pi-.5)
+        coin.phase = math.cos(fit.phase-1.25*math.pi)
         coin.wave_length = fit.hours / fit.freq
         last_wave = candles[-int(coin.wave_length*candles_per_hour):]
         coin.mix = unmix(coin.price, last_wave.max, last_wave.min)
@@ -134,7 +134,7 @@ def get_best_coin(coins):
         #show_plots(coin)
 
     best = good_coins[0]
-    if best.gain < .01:
+    if best.gain < .02:
         print(f"{best.name} not good enough")
         return None
 
@@ -149,7 +149,7 @@ def hold_till_crest(coin):
     while True:
         price = binance.fetch_ticker(coin.symbol)['last']
         gain = (price - start_price) / start_price
-        wave_length = getattr(coin, 'wave_length', 2)
+        wave_length = getattr(coin, 'wave_length', 3)
         candles = Candles(coin.symbol, timeFrame, limit=int(wave_length*candles_per_hour))
         fit = candles.wavefit(slice(1, 3))
         phase = math.cos(fit.phase)
