@@ -101,6 +101,7 @@ def get_best_coin(coins):
         ticker = tickers[coin.symbol]
         coin.price  = ticker['last']
         coin.vol    = math.log10(ticker['quoteVolume'])
+
         candles = Candles(coin.symbol, timeFrame, limit=18*candles_per_hour)
         hours = [6, 12, 18]
         wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(2, 4)) for h in hours]
@@ -109,12 +110,16 @@ def get_best_coin(coins):
         coin.amp   = fit.amp / coin.price
         coin.freq  = fit.freq
         coin.phase = math.cos(fit.phase-1.25*math.pi)
+        if coin.phase < 0: continue
         coin.wave_length = fit.hours / fit.freq
         last_wave = candles[-int(coin.wave_length*candles_per_hour):]
         coin.mix = unmix(coin.price, last_wave.max, last_wave.min)
         coin.error = fit.rmse / coin.price
 
-        coin.gain = coin.vol * coin.amp * coin.freq * coin.phase * coin.mix / (1+(coin.error*1e2))
+        ob, _vol = reduce_order_book(coin.symbol, bound=.02, limit=100)
+        coin.ob = ob / 2 + .5 # negative ob isn't deal breaker
+
+        coin.gain = coin.vol * coin.ob * coin.amp * coin.freq * coin.phase * coin.mix / (1+(coin.error*1e2))
         if coin.gain < 0: continue
         good_coins.append(coin)
 
@@ -128,13 +133,13 @@ def get_best_coin(coins):
     col  = lambda s,c=6: str(s).ljust(c)
     rcol = lambda n,c=6: str(round(n, 2)).ljust(c)
     pcol = lambda n: percentage(n).ljust(6)
-    print(col(''), col('gain'), col('vol', 4), col('amp'), col('freq',4), col('phase'), col('mix',4), col('error'))
+    print(col(''), col('gain'), col('vol', 4), col('ob',4), col('amp'), col('freq',4), col('phase'), col('mix',4), col('error'))
     for coin in good_coins[:5]:
-        print(col(coin.name), pcol(coin.gain), rcol(coin.vol, 4), pcol(coin.amp), col(coin.freq,4), rcol(coin.phase), rcol(coin.mix,4), pcol(coin.error))
+        print(col(coin.name), pcol(coin.gain), rcol(coin.vol, 4), rcol(coin.ob,4), pcol(coin.amp), col(coin.freq,4), rcol(coin.phase), rcol(coin.mix,4), pcol(coin.error))
         #show_plots(coin)
 
     best = good_coins[0]
-    if best.gain < .02:
+    if best.gain < .015:
         print(f"{best.name} not good enough")
         return None
 
@@ -144,8 +149,8 @@ def get_best_coin(coins):
 def hold_till_crest(coin):
     print(f"====== Holding {coin.name} ======")
     start_price = binance.fetch_ticker(coin.symbol)['last']
-    cell = lambda s: str(s).ljust(7)
-    print(cell("phase"), cell('mix'), cell('lc mix'), cell('gain'))
+    cell = lambda s, c=5: str(s).ljust(c)
+    print(cell("phase"), cell('mix'), cell('ob'), cell('lc mix', 6), cell('gain'))
     while True:
         price = binance.fetch_ticker(coin.symbol)['last']
         gain = (price - start_price) / start_price
@@ -154,11 +159,12 @@ def hold_till_crest(coin):
         fit = candles.wavefit(slice(1, 3))
         phase = math.cos(fit.phase)
         crest_mix = clamp(unmix(price, fit.zero-fit.amp, fit.zero+fit.amp) * 2 - 1, -1, 1)
+        ob, _vol = reduce_order_book(coin.symbol, bound=.01, limit=100)
         try:    last_candle_mix = unmix(price, candles[-2:].min, candles[-2:].max)
         except: last_candle_mix = .5
-        print(cell(round(phase, 2)), cell(round(crest_mix, 2)), cell(round(last_candle_mix, 2)), cell(percentage(gain)))
+        print(cell(round(phase, 2)), cell(round(crest_mix, 2)), cell(round(-ob, 2)), cell(round(last_candle_mix, 2), 6), cell(percentage(gain)))
 
-        if np.average([phase, crest_mix]) > .75 and last_candle_mix >= .5:
+        if np.average([phase, crest_mix, -ob]) > .75 and last_candle_mix >= .5:
             try:
                 trade_coin(coin.name, 'BTC', avoid_partial_fill=False)
                 break
@@ -440,6 +446,26 @@ class Candles(list):
             list.__init__(items, super().__getitem__(item))
             return items
         return super().__getitem__(item)
+
+
+def reduce_order_book(symbol, bound=.03, limit=500):
+    """Reduces order book to value between -1 -> 1.
+       -1 means all orders are asks, 1 means all orders are bids.  Presumably -1 is bad and 1 is good.
+       Volumes are weighted less the farther they are from the current price.
+       bound=.03 means orders more than +-3% of the current price have 0 weight.
+    """
+    book = binance.fetch_order_book(symbol, limit=limit)
+    ask_range = (book['asks'][-1][0] - book['asks'][0][0]) / book['asks'][0][0]
+    if ask_range < bound:
+        print(f"WARNING {symbol} ask range {round(ask_range, 3)} < {bound}. Increase limit")
+    ask_price = book['asks'][0][0]
+    ask_bound = ask_price * (1+bound)
+    ask_volume = sum(max(0, unmix(price, ask_bound, ask_price)) * volume * price for price, volume in book['asks'])
+    bid_price = book['bids'][0][0]
+    bid_bound = bid_price * (1-bound)
+    bid_volume = sum(max(0, unmix(price, bid_bound, bid_price)) * volume * price for price, volume in book['bids'])
+    volume = bid_volume + ask_volume
+    return (bid_volume / volume) * 2 - 1, volume
 
 
 def get_balance():
