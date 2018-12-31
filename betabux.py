@@ -113,13 +113,13 @@ def get_best_coin(coins):
         if coin.phase < 0: continue
         coin.wave_length = fit.hours / fit.freq
         last_wave = candles[-int(coin.wave_length*candles_per_hour):]
-        coin.mix = unmix(coin.price, last_wave.max, last_wave.min)
+        coin.mix = unmix(coin.price, last_wave.max, last_wave.min) * 2 - 1
+        if coin.mix < 0: continue
         coin.error = fit.rmse / coin.price
 
-        ob, _vol = reduce_order_book(coin.symbol, bound=.02, limit=100)
-        coin.ob = ob / 2 + .5 # negative ob isn't deal breaker
+        coin.ob, _vol = reduce_order_book(coin.symbol, bound=.02, limit=100)
 
-        coin.gain = coin.vol * coin.ob * coin.amp * coin.freq * coin.phase * coin.mix / (1+(coin.error*1e2))
+        coin.gain = coin.vol * coin.amp * coin.freq * np.average([coin.phase, coin.mix, coin.ob]) / (1+(coin.error*1e2))
         if coin.gain < 0: continue
         good_coins.append(coin)
 
@@ -133,9 +133,9 @@ def get_best_coin(coins):
     col  = lambda s,c=6: str(s).ljust(c)
     rcol = lambda n,c=6: str(round(n, 2)).ljust(c)
     pcol = lambda n: percentage(n).ljust(6)
-    print(col(''), col('gain'), col('vol', 4), col('ob',4), col('amp'), col('freq',4), col('phase'), col('mix',4), col('error'))
+    print(col(''), col('gain'), col('vol', 4), col('amp'), col('freq',4), col('phase'), col('mix',4), col('ob',4), col('error'))
     for coin in good_coins[:5]:
-        print(col(coin.name), pcol(coin.gain), rcol(coin.vol, 4), rcol(coin.ob,4), pcol(coin.amp), col(coin.freq,4), rcol(coin.phase), rcol(coin.mix,4), pcol(coin.error))
+        print(col(coin.name), pcol(coin.gain), rcol(coin.vol, 4), pcol(coin.amp), col(coin.freq,4), rcol(coin.phase), rcol(coin.mix,4), rcol(coin.ob,4), pcol(coin.error))
         #show_plots(coin)
 
     best = good_coins[0]
@@ -149,8 +149,9 @@ def get_best_coin(coins):
 def hold_till_crest(coin):
     print(f"====== Holding {coin.name} ======")
     start_price = binance.fetch_ticker(coin.symbol)['last']
-    cell = lambda s, c=5: str(s).ljust(c)
-    print(cell("phase"), cell('mix'), cell('ob'), cell('lc mix', 6), cell('gain'))
+    cell = lambda s, c=6: str(s).ljust(c)
+    ob_plot = [],[]
+    print(cell("phase"), cell('mix'), cell('ob'), cell('lc', 5), cell('gain'))
     while True:
         price = binance.fetch_ticker(coin.symbol)['last']
         gain = (price - start_price) / start_price
@@ -160,11 +161,13 @@ def hold_till_crest(coin):
         phase = math.cos(fit.phase)
         crest_mix = clamp(unmix(price, fit.zero-fit.amp, fit.zero+fit.amp) * 2 - 1, -1, 1)
         ob, _vol = reduce_order_book(coin.symbol, bound=.01, limit=100)
+        ob_plot[0].append(datetime.datetime.now().timestamp() / 3600)
+        ob_plot[1].append(ob)
         try:    last_candle_mix = unmix(price, candles[-2:].min, candles[-2:].max)
         except: last_candle_mix = .5
-        print(cell(round(phase, 2)), cell(round(crest_mix, 2)), cell(round(-ob, 2)), cell(round(last_candle_mix, 2), 6), cell(percentage(gain)))
+        print(cell(round(phase, 2)), cell(round(crest_mix, 2)), cell(round(-ob, 2)), cell(round(last_candle_mix, 2), 5), cell(percentage(gain)))
 
-        if np.average([phase, crest_mix, -ob]) > .75 and last_candle_mix >= .5:
+        if np.average([phase, crest_mix, -ob]) > .5 and last_candle_mix >= .5:
             try:
                 trade_coin(coin.name, 'BTC', avoid_partial_fill=False)
                 break
@@ -176,6 +179,12 @@ def hold_till_crest(coin):
     times, prices = fit.prices
     coin.plots["hold zero"] = [times[0], times[-1]], [fit.zero, fit.zero], dict(linestyle='--')
     coin.plots["hold wave"] = times, prices, dict(linestyle='--')
+
+    cmin, cmax = fit.candles.min, fit.candles.max
+    scale_ob = lambda ob: mix(cmin, cmax, ob / 2 + .5)
+    ob_plot[1] = [scale_ob(ob) for ob in ob_plot[1]]
+    coin.plots['ob'] = *ob_plot, dict(linestyle='--')
+
     #show_plots(coin)
 
 
