@@ -182,8 +182,7 @@ def hold_till_crest(coin):
 
     cmin, cmax = fit.candles.min, fit.candles.max
     scale_ob = lambda ob: mix(cmin, cmax, ob / 2 + .5)
-    ob_plot[1] = [scale_ob(ob) for ob in ob_plot[1]]
-    coin.plots['ob'] = *ob_plot, dict(linestyle='--')
+    coin.plots['ob'] = ob_plot[0], [scale_ob(ob) for ob in ob_plot[1]], dict(linestyle='--')
 
     #show_plots(coin)
 
