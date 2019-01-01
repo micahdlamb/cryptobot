@@ -130,16 +130,16 @@ def get_best_coin(coins):
 
     if not good_coins: return None
     good_coins.sort(key=lambda coin: coin.gain, reverse=True)
-    col  = lambda s,c=6: str(s).ljust(c)
-    rcol = lambda n,c=6: str(round(n, 2)).ljust(c)
-    pcol = lambda n: percentage(n).ljust(6)
-    print(col(''), col('gain'), col('vol', 4), col('amp'), col('freq',4), col('phase'), col('mix',4), col('ob',4), col('error'))
+    col  = lambda s,c=5: str(s).ljust(c)
+    rcol = lambda n,c=5,r=2: str(round(n, r)).ljust(c)
+    pcol = lambda n: percentage(n).ljust(5)
+    print(col(''), col('gain'), col('vol', 4), col('amp'), col('fq',2), col('ϕ',4), col('mix',4), col('ob',3), col('error'))
     for coin in good_coins[:5]:
-        print(col(coin.name), pcol(coin.gain), rcol(coin.vol, 4), pcol(coin.amp), col(coin.freq,4), rcol(coin.phase), rcol(coin.mix,4), rcol(coin.ob,4), pcol(coin.error))
+        print(col(coin.name), pcol(coin.gain), rcol(coin.vol, 4), pcol(coin.amp), col(coin.freq,2), rcol(coin.phase,4), rcol(coin.mix,4), rcol(coin.ob,3,1), pcol(coin.error))
         #show_plots(coin)
 
     best = good_coins[0]
-    if best.gain < .015:
+    if best.gain < .02:
         print(f"{best.name} not good enough")
         return None
 
@@ -167,7 +167,7 @@ def hold_till_crest(coin):
         except: last_candle_mix = .5
         print(cell(round(phase, 2)), cell(round(crest_mix, 2)), cell(round(-ob, 2)), cell(round(last_candle_mix, 2), 5), cell(percentage(gain)))
 
-        if np.average([phase, crest_mix, -ob]) > .5 and last_candle_mix >= .5:
+        if np.average([phase, crest_mix, -ob]) >= .65 and last_candle_mix >= .5:
             try:
                 trade_coin(coin.name, 'BTC', avoid_partial_fill=False)
                 break
@@ -181,7 +181,7 @@ def hold_till_crest(coin):
     coin.plots["hold wave"] = times, prices, dict(linestyle='--')
 
     cmin, cmax = fit.candles.min, fit.candles.max
-    scale_ob = lambda ob: mix(cmin, cmax, ob / 2 + .5)
+    scale_ob = lambda ob: mix(cmax, cmax + cmax-cmin, ob / 2 + .5)
     coin.plots['ob'] = ob_plot[0], [scale_ob(ob) for ob in ob_plot[1]], dict(linestyle='--')
 
     #show_plots(coin)
@@ -237,9 +237,11 @@ def trade_coin(from_coin, to_coin, max_change=None, avoid_partial_fill=True):
         rate = Candles(symbol, '1m', limit=5).rate
 
         if side == 'buy':
+            bid_price = mix(ask_price, bid_price, .9)
             price  = round_price_down(symbol, min(ask_price*1.001, bid_price + rate/20))
             amount = binance.amount_to_lots(symbol, holding_amount / price)
         else:
+            ask_price = mix(ask_price, bid_price, .1)
             price  = round_price_up  (symbol, max(bid_price*.999, ask_price + rate/20))
             amount = holding_amount
 
