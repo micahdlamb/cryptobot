@@ -143,10 +143,10 @@ def get_best_coin(coins):
     print(col(''), col('gain'), col('vol', 4), col('wave'), col('ob',3))
     for coin in good_coins[:5]:
         print(col(coin.name), pcol(coin.gain), rcol(coin.vol, 4), pcol(coin.good_wave), rcol(coin.ob,3,1))
-        show_plots(coin)
+        #show_plots(coin)
 
     best = good_coins[0]
-    if best.gain < .03:
+    if best.gain < .02:
         print(f"{best.name} not good enough")
         return None
 
