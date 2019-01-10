@@ -60,7 +60,7 @@ def main():
                             continue
 
                         try:
-                            order = trade_coin('BTC', best.name, max_change=(best.price, .015))
+                            order = trade_coin('BTC', best.name, spread_mix=.15, max_change=(best.price, .015))
                             hodl = best
                             break
                         except TimeoutError as error:
@@ -221,7 +221,7 @@ def _record_order(order):
     trade_log.append(order)
 
 
-def trade_coin(from_coin, to_coin, max_change=None, avoid_partial_fill=True):
+def trade_coin(from_coin, to_coin, spread_mix=.5, max_change=None, avoid_partial_fill=True):
     assert from_coin != to_coin, to_coin
     print(f"Transferring {from_coin} to {to_coin}...")
 
@@ -242,14 +242,13 @@ def trade_coin(from_coin, to_coin, max_change=None, avoid_partial_fill=True):
 
         holding_amount = binance.fetch_balance()[from_coin]['free']
         rate = Candles(symbol, '1m', limit=5).rate
+        base_price = mix(bid_price, ask_price, spread_mix)
 
         if side == 'buy':
-            bid_price = mix(ask_price, bid_price, .85)
-            price  = round_price_down(symbol, min(ask_price*1.001, bid_price + rate/20))
+            price  = round_price_down(symbol, min(ask_price*1.001, base_price + rate/20))
             amount = binance.amount_to_lots(symbol, holding_amount / price)
         else:
-            ask_price = mix(ask_price, bid_price, .15)
-            price  = round_price_up  (symbol, max(bid_price*.999, ask_price + rate/20))
+            price  = round_price_up  (symbol, max(bid_price*.999, base_price + rate/20))
             amount = holding_amount
 
         if max_change:
