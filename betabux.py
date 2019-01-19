@@ -60,7 +60,7 @@ def main():
                             continue
 
                         try:
-                            order = trade_coin('BTC', best.name, spread_mix=.15, max_change=(best.price, .015))
+                            order = trade_coin('BTC', best.name, spread_mix=.25, max_price=best.price*1.01, avoid_partial_fill=True)
                             hodl = best
                             break
                         except TimeoutError as error:
@@ -83,11 +83,7 @@ def main():
                 msg['Subject'] = 'ERROR'
                 msg.set_content(log.getvalue())
                 email_myself(msg)
-
-        # Not really needed but just in case...
-        loop_minutes = (time.time() - start_time) / 60
-        if loop_minutes < 10:
-            time.sleep(60*(10 - loop_minutes))
+                time.sleep(30 * 60)
 
         print('-'*30 + '\n')
 
@@ -158,7 +154,7 @@ def hold_till_crest(coin):
     start_price = binance.fetch_ticker(coin.symbol)['last']
     cell = lambda s, c=6: str(s).ljust(c)
     ob_plot = [],[]
-    print(cell("phase"), cell('mix'), cell('ob'), cell('lc', 5), cell('gain'))
+    print(cell("phase"), cell('mix'), cell('ob'), cell('gain'))
     while True:
         price = binance.fetch_ticker(coin.symbol)['last']
         gain = (price - start_price) / start_price
@@ -170,13 +166,11 @@ def hold_till_crest(coin):
         ob, _vol = reduce_order_book(coin.symbol)
         ob_plot[0].append(datetime.datetime.now().timestamp() / 3600)
         ob_plot[1].append(ob)
-        try:    last_candle_mix = unmix(price, candles[-2:].min, candles[-2:].max)
-        except: last_candle_mix = .5
-        print(cell(round(phase, 2)), cell(round(crest_mix, 2)), cell(round(-ob, 2)), cell(round(last_candle_mix, 2), 5), cell(percentage(gain)))
+        print(cell(round(phase, 2)), cell(round(crest_mix, 2)), cell(round(-ob, 2)), cell(percentage(gain)))
 
-        if np.average([phase, crest_mix, -ob]) >= .65 and last_candle_mix >= .5:
+        if np.average([phase, crest_mix, -ob]) >= .65:
             try:
-                trade_coin(coin.name, 'BTC', avoid_partial_fill=False)
+                trade_coin(coin.name, 'BTC', min_price=candles[-2:].avg_price)
                 break
             except TimeoutError as err:
                 print(err)
@@ -221,7 +215,7 @@ def _record_order(order):
     trade_log.append(order)
 
 
-def trade_coin(from_coin, to_coin, spread_mix=.5, max_change=None, avoid_partial_fill=True):
+def trade_coin(from_coin, to_coin, spread_mix=.5, min_price=None, max_price=None, avoid_partial_fill=False):
     assert from_coin != to_coin, to_coin
     print(f"Transferring {from_coin} to {to_coin}...")
 
@@ -235,34 +229,27 @@ def trade_coin(from_coin, to_coin, spread_mix=.5, max_change=None, avoid_partial
 
     filled = 0
     for i in range(8):
+        holding_amount = binance.fetch_balance()[from_coin]['free']
         book = binance.fetch_order_book(symbol, limit=5)
         bid_price = book['bids'][0][0]
         ask_price = book['asks'][0][0]
-        avg_price = np.average([bid_price, ask_price])
 
-        holding_amount = binance.fetch_balance()[from_coin]['free']
-        rate = Candles(symbol, '1m', limit=5).rate
-        base_price = mix(bid_price, ask_price, spread_mix)
+        price = mix(bid_price, ask_price, spread_mix)
+        if min_price and price < min_price: price = min_price
+        if max_price and price > max_price: price = max_price
 
         if side == 'buy':
-            bid_price = mix(ask_price, bid_price, .75)
-            price  = round_price_down(symbol, min(ask_price*1.001, base_price + rate/30))
+            price  = round_price_down(symbol, price)
+            assert price < ask_price
             amount = binance.amount_to_lots(symbol, holding_amount / price)
         else:
-            ask_price = mix(ask_price, bid_price, .25)
-            price  = round_price_up  (symbol, max(bid_price*.999,  base_price + rate/30))
+            price  = round_price_up  (symbol, price)
+            assert price > bid_price
             amount = holding_amount
 
-        if max_change:
-            start_price, allowed_change = max_change
-            change = (price - start_price) / start_price
-            if abs(change) > allowed_change:
-                raise TimeoutError(f"{side} of {symbol} aborted due to price change of {percentage(change)}")
-
         m1x    = unmix(price, bid_price, ask_price)
-        spread = (ask_price - bid_price) / avg_price
-        rate   = rate / avg_price
-        print(f"{side} {amount} {symbol} at {price} mix={round(m1x, 3)} <->={percentage(spread)} y'={percentage(rate)}/h")
+        spread = (ask_price - bid_price) / bid_price
+        print(f"{side} {amount} {symbol} at {price} mix={round(m1x, 3)} <->={percentage(spread)}")
 
         order = create_order_and_wait(symbol, side, amount, price)
         if order['status'] == 'closed':
@@ -274,6 +261,13 @@ def trade_coin(from_coin, to_coin, spread_mix=.5, max_change=None, avoid_partial
         filled += order['filled']
         if filled == 0:
             break
+
+        if min_price and ask_price < min_price:
+            change = (min_price - ask_price) / ask_price
+            raise TimeoutError(f"{side} of {symbol} aborted due to price decrease of {percentage(change)}")
+        if max_price and bid_price > max_price:
+            change = (bid_price - max_price) / bid_price
+            raise TimeoutError(f"{side} of {symbol} aborted due to price increase of {percentage(change)}")
 
     raise TimeoutError(f"{side} of {symbol} didn't get filled")
 
@@ -370,37 +364,13 @@ class Candles(list):
 
     def __init__(self, symbol, timeFrame, limit):
         super().__init__(binance.fetch_ohlcv(symbol, timeFrame, limit=max(limit, 2)))
-        #key = symbol, timeFrame
-        #ohlcv = self.cache.get(key)
-        #if not ohlcv or limit > len(ohlcv):
-        #    self.cache[key] = ohlcv = binance.fetch_ohlcv(symbol, timeFrame, limit=limit)
-        #else:
-        #    now = datetime.datetime.now().timestamp() * 1000
-        #    dt = ohlcv[1][0] - ohlcv[0][0]
-        #    keep_limit = max(len(ohlcv), limit)
-        #    new_limit = min(keep_limit, math.floor((now - ohlcv[-1][0]) / dt) + 1)
-        #    #print(new_limit, (now - ohlcv[-1][0]) / dt, (now - ohlcv[-1][0])/milli_seconds_in_minute)
-        #    new_ohlcv = binance.fetch_ohlcv(symbol, timeFrame, limit=new_limit)
-        #    ohlcv = ohlcv[:-1] + new_ohlcv
-        #    self.cache[key] = ohlcv[-keep_limit:]
-        #    ohlcv = ohlcv[-limit:]
-        #    for i in range(len(ohlcv)-1):
-        #        assert dt*.9 < ohlcv[i+1][0] - ohlcv[i][0] < dt*1.1
-
-        #super().__init__(ohlcv)
+        self.dt = int(timeFrame[:-1]) * {'m': 1/60, 'h': 1, 'd': 24}[timeFrame[-1]]
 
     @property
     def prices(self):
         prices = [np.average(candle[2:4]) for candle in self]
-        to_center = self.delta_time / 2
-        times = [candle[0] / milli_seconds_in_hour + to_center for candle in self]
-        #times.append(times[-1]+to_center)
-        #prices.append(self[-1][-2])
+        times = [candle[0] / milli_seconds_in_hour + self.dt/2 for candle in self]
         return times, prices
-
-    @property
-    def delta_time(self):
-        return (self[1][0] - self[0][0]) / milli_seconds_in_hour
 
     def polyfit(self, deg, **kwds):
         return np.polyfit(*self.prices, deg, **kwds)
@@ -448,7 +418,7 @@ class Candles(list):
 
     @property
     def end_time(self):
-        return self[-1][0] / milli_seconds_in_hour + self.delta_time
+        return self[-1][0] / milli_seconds_in_hour + self.dt
 
     @property
     def min(self):
