@@ -118,7 +118,7 @@ def get_best_coin(coins):
         goodness  = lambda fit: fit.amp * fit.freq * np.average([phase(fit), m1x(fit)]) / coin.price
         coin.good_wave = np.average([goodness(fit) for fit in wave_fits])
 
-        coin.ob, _vol = reduce_order_book(coin.symbol, bound=.02, limit=100)
+        coin.ob, _vol = reduce_order_book(coin.symbol)
         coin.ob = coin.ob * .5 + .5
 
         coin.gain = coin.vol * coin.good_wave * coin.ob
@@ -167,7 +167,7 @@ def hold_till_crest(coin):
         fit = candles.wavefit(slice(1, 3))
         phase = math.cos(fit.phase)
         crest_mix = clamp(unmix(price, fit.zero-fit.amp, fit.zero+fit.amp) * 2 - 1, -1, 1)
-        ob, _vol = reduce_order_book(coin.symbol, bound=.01, limit=100)
+        ob, _vol = reduce_order_book(coin.symbol)
         ob_plot[0].append(datetime.datetime.now().timestamp() / 3600)
         ob_plot[1].append(ob)
         try:    last_candle_mix = unmix(price, candles[-2:].min, candles[-2:].max)
@@ -189,7 +189,7 @@ def hold_till_crest(coin):
 
     cmin, cmax = fit.candles.min, fit.candles.max
     scale_ob = lambda ob: mix(cmax, cmax + cmax-cmin, ob / 2 + .5)
-    coin.plots['ob'] = ob_plot[0], [scale_ob(ob) for ob in ob_plot[1]], dict(linestyle='--')
+    coin.plots['ob'] = ob_plot[0], [scale_ob(ob) for ob in ob_plot[1]], dict(linestyle='-')
 
     #show_plots(coin)
 
@@ -245,10 +245,12 @@ def trade_coin(from_coin, to_coin, spread_mix=.5, max_change=None, avoid_partial
         base_price = mix(bid_price, ask_price, spread_mix)
 
         if side == 'buy':
-            price  = round_price_down(symbol, min(ask_price*1.001, base_price + rate/20))
+            bid_price = mix(ask_price, bid_price, .75)
+            price  = round_price_down(symbol, min(ask_price*1.001, base_price + rate/30))
             amount = binance.amount_to_lots(symbol, holding_amount / price)
         else:
-            price  = round_price_up  (symbol, max(bid_price*.999, base_price + rate/20))
+            ask_price = mix(ask_price, bid_price, .25)
+            price  = round_price_up  (symbol, max(bid_price*.999,  base_price + rate/30))
             amount = holding_amount
 
         if max_change:
@@ -464,11 +466,10 @@ class Candles(list):
         return super().__getitem__(item)
 
 
-def reduce_order_book(symbol, bound=.03, limit=500):
+def reduce_order_book(symbol, bound=.04, pow=2, limit=500):
     """Reduces order book to value between -1 -> 1.
        -1 means all orders are asks, 1 means all orders are bids.  Presumably -1 is bad and 1 is good.
        Volumes are weighted less the farther they are from the current price.
-       bound=.03 means orders more than +-3% of the current price have 0 weight.
     """
     book = binance.fetch_order_book(symbol, limit=limit)
     ask_range = (book['asks'][-1][0] - book['asks'][0][0]) / book['asks'][0][0]
@@ -476,10 +477,10 @@ def reduce_order_book(symbol, bound=.03, limit=500):
         print(f"WARNING {symbol} ask range {round(ask_range, 3)} < {bound}. Increase limit")
     ask_price = book['asks'][0][0]
     ask_bound = ask_price * (1+bound)
-    ask_volume = sum(max(0, unmix(price, ask_bound, ask_price)) * volume * price for price, volume in book['asks'])
+    ask_volume = sum(max(0, unmix(price, ask_bound, ask_price))**pow * volume * price for price, volume in book['asks'])
     bid_price = book['bids'][0][0]
     bid_bound = bid_price * (1-bound)
-    bid_volume = sum(max(0, unmix(price, bid_bound, bid_price)) * volume * price for price, volume in book['bids'])
+    bid_volume = sum(max(0, unmix(price, bid_bound, bid_price))**pow * volume * price for price, volume in book['bids'])
     volume = bid_volume + ask_volume
     return (bid_volume / volume) * 2 - 1, volume
 
