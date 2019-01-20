@@ -3,6 +3,7 @@ Ideas to try:
 Simulate cost function to evaluate how good...
 
 best branches - ffts, avgfft
+copy avgfft -> ffts!!!
 """
 
 import os, sys, time, math, collections, io, contextlib, traceback, datetime, platform
@@ -106,12 +107,12 @@ def get_best_coin(coins):
         for fit, h in zip(wave_fits, hours): fit.hours = h
 
         phase = lambda fit: math.cos(fit.phase-1.25*math.pi)
-        def m1x(fit):
+        def lhw_mix(fit):
             wave_length = fit.hours / fit.freq
             last_half_wave = candles[-int(wave_length * candles_per_hour / 2):]
             return unmix(coin.price, last_half_wave.max, last_half_wave.min) * 2 - 1
-        if any(np.average([phase(fit), m1x(fit)]) < 0 for fit in wave_fits): continue
-        goodness  = lambda fit: fit.amp * fit.freq * np.average([phase(fit), m1x(fit)]) / coin.price
+        if any(np.average([phase(fit), lhw_mix(fit)]) < 0 for fit in wave_fits): continue
+        goodness  = lambda fit: fit.amp * fit.freq * np.average([phase(fit), lhw_mix(fit)]) / coin.price
         coin.good_wave = np.average([goodness(fit) for fit in wave_fits])
 
         coin.ob, _vol = reduce_order_book(coin.symbol)
@@ -170,7 +171,7 @@ def hold_till_crest(coin):
 
         if np.average([phase, crest_mix, -ob]) >= .65:
             try:
-                trade_coin(coin.name, 'BTC', min_price=candles[-2:].avg_price)
+                trade_coin(coin.name, 'BTC', min_price=candles[-2:].avg)
                 break
             except TimeoutError as err:
                 print(err)
@@ -360,53 +361,17 @@ def email_myself(msg):
 
 
 class Candles(list):
-    cache = dict()
-
+    """Pull prices for a coin.  Times are in hours"""
     def __init__(self, symbol, timeFrame, limit):
         super().__init__(binance.fetch_ohlcv(symbol, timeFrame, limit=max(limit, 2)))
         self.dt = int(timeFrame[:-1]) * {'m': 1/60, 'h': 1, 'd': 24}[timeFrame[-1]]
 
     @property
     def prices(self):
+        "Candles reduced to single price by using avg(min, max)"
         prices = [np.average(candle[2:4]) for candle in self]
         times = [candle[0] / milli_seconds_in_hour + self.dt/2 for candle in self]
         return times, prices
-
-    def polyfit(self, deg, **kwds):
-        return np.polyfit(*self.prices, deg, **kwds)
-
-    class WaveFit(collections.namedtuple("Wave", "zero freq amp phase rmse")): pass
-
-    def wavefit(self, freq_slice):
-        times, prices = self.prices
-        n = len(prices)
-        fft = np.fft.fft(prices)
-        zero = fft[0].real / n
-        freq, wave = max(enumerate(fft[freq_slice] / n), key=lambda x: abs(x[1]))
-        freq += freq_slice.start
-        val = lambda x: np.real(wave * (np.cos(x*freq*2*np.pi/n) + 1j * np.sin(x*freq*2*np.pi/n)))*2
-        values = zero + np.array([val(i) for i in range(n)])
-        rmse = np.sqrt(((values - prices)**2).mean())
-        wave_fit = self.WaveFit(zero, freq, abs(wave)*2, np.angle(wave) % (2*np.pi), rmse)
-        wave_fit.candles = self
-        wave_fit.prices  = (times, values)
-        return wave_fit
-
-    @property
-    def avg_price(self):
-        return self.polyfit(0)[0]
-
-    @property
-    def rate(self):
-        return self.polyfit(1)[0]
-
-    @property
-    def acceleration(self):
-        return self.polyfit(2)[0] * 2
-
-    @property
-    def delta(self):
-        return self.end_price * 2 - self.max - self.min
 
     @property
     def start_price(self):
@@ -428,10 +393,44 @@ class Candles(list):
     def max(self):
         return max(candle[2] for candle in self)
 
+    def polyfit(self, deg, **kwds):
+        return np.polyfit(*self.prices, deg, **kwds)
+
+    @property
+    def avg(self):
+        return self.polyfit(0)[0]
+
+    @property
+    def velocity(self):
+        return self.polyfit(1)[0]
+
+    @property
+    def acceleration(self):
+        return self.polyfit(2)[0] * 2
+
+    class WaveFit(collections.namedtuple("Wave", "zero freq amp phase rmse")): pass
+
+    def wavefit(self, freq_slice):
+        times, prices = self.prices
+        n = len(prices)
+        fft = np.fft.fft(prices)
+        zero = fft[0].real / n
+        freq, wave = max(enumerate(fft[freq_slice] / n), key=lambda x: abs(x[1]))
+        freq += freq_slice.start
+        # amplitudes * 2 to account for imaginary component
+        val = lambda x: np.real(wave * (np.cos(x*freq*2*np.pi/n) + 1j * np.sin(x*freq*2*np.pi/n)))*2
+        values = zero + np.array([val(i) for i in range(n)])
+        rmse = np.sqrt(((values - prices)**2).mean())
+        wave_fit = self.WaveFit(zero, freq, abs(wave)*2, np.angle(wave) % (2*np.pi), rmse)
+        wave_fit.candles = self
+        wave_fit.prices  = (times, values)
+        return wave_fit
+
     def __getitem__(self, item):
         if isinstance(item, slice):
             items = Candles.__new__(Candles)
             list.__init__(items, super().__getitem__(item))
+            items.__dict__.update(self.__dict__)
             return items
         return super().__getitem__(item)
 
