@@ -112,7 +112,10 @@ def get_best_coin(coins):
             last_half_wave = candles[-int(wave_length * candles_per_hour / 2):]
             return unmix(coin.price, last_half_wave.max, last_half_wave.min) * 2 - 1
         if any(np.average([phase(fit), lhw_mix(fit)]) < 0 for fit in wave_fits): continue
-        goodness  = lambda fit: fit.amp * fit.freq * np.average([phase(fit), lhw_mix(fit)]) / coin.price
+
+        error = lambda fit: (1 + fit.rmse * 1e1 / coin.price)**2
+
+        goodness  = lambda fit: fit.amp * fit.freq * np.average([phase(fit), lhw_mix(fit)]) / coin.price / error(fit)
         coin.good_wave = np.average([goodness(fit) for fit in wave_fits])
 
         coin.ob, _vol = reduce_order_book(coin.symbol)
