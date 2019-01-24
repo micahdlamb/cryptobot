@@ -103,7 +103,7 @@ def get_best_coin(coins):
 
         hours = [6, 12, 24, 48]
         candles = Candles(coin.symbol, timeFrame, limit=hours[-1]*candles_per_hour)
-        wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(2, 4)) for h in hours]
+        wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(1, 4)) for h in hours]
         for fit, h in zip(wave_fits, hours): fit.hours = h
 
         phase = lambda fit: math.cos(fit.phase-1.25*math.pi)
@@ -111,35 +111,31 @@ def get_best_coin(coins):
             wave_length = fit.hours / fit.freq
             last_half_wave = candles[-int(wave_length * candles_per_hour / 2):]
             return unmix(coin.price, last_half_wave.max, last_half_wave.min) * 2 - 1
-        if any(np.average([phase(fit), lhw_mix(fit)]) < 0 for fit in wave_fits): continue
-
-        error = lambda fit: (1 + fit.rmse * 1e1 / coin.price)**2
-
-        goodness  = lambda fit: fit.amp * fit.freq * np.average([phase(fit), lhw_mix(fit)]) / coin.price / error(fit)
+        goodness  = lambda fit: fit.amp * fit.freq * np.average([phase(fit), lhw_mix(fit)]) / coin.price
         coin.good_wave = np.average([goodness(fit) for fit in wave_fits])
+        if coin.good_wave < 0: continue
 
         coin.ob, _vol = reduce_order_book(coin.symbol)
-        coin.ob = coin.ob * .5 + .5
 
         coin.gain = coin.vol * coin.good_wave * coin.ob
         if coin.gain < 0: continue
         good_coins.append(coin)
 
-        wait_fit = max(wave_fits[:2], key=lambda fit: fit.amp * fit.freq)
+        wait_fit = max(wave_fits, key=lambda fit: fit.amp * fit.freq / fit.hours)
         coin.wave_length = wait_fit.hours / wait_fit.freq
 
         coin.plots["actual"] = *candles[-18*candles_per_hour:].prices, dict(linestyle='-')
         for fit in wave_fits:
             times, prices = fit.prices
             times, prices = times[-18*candles_per_hour:], prices[-18*candles_per_hour:]
-            coin.plots[f"zero {fit.hours}"] = [times[0], times[-1]], [fit.zero, fit.zero], dict(linestyle='--')
+            #coin.plots[f"zero {fit.hours}"] = [times[0], times[-1]], [fit.zero, fit.zero], dict(linestyle='--')
             coin.plots[f"wave {fit.hours}"] = times, prices, dict(linestyle='--')
 
     if not good_coins: return None
     good_coins.sort(key=lambda coin: coin.gain, reverse=True)
-    col  = lambda s,c=5: str(s).ljust(c)
-    rcol = lambda n,c=5,r=2: str(round(n, r)).ljust(c)
-    pcol = lambda n: percentage(n).ljust(5)
+    col  = lambda s,c=6: str(s).ljust(c)
+    rcol = lambda n,c=6,r=2: str(round(n, r)).ljust(c)
+    pcol = lambda n: percentage(n).ljust(6)
     print(col(''), col('gain'), col('vol', 4), col('wave'), col('ob',3))
     for coin in good_coins[:5]:
         print(col(coin.name), pcol(coin.gain), rcol(coin.vol, 4), pcol(coin.good_wave), rcol(coin.ob,3,1))
@@ -158,21 +154,20 @@ def hold_till_crest(coin):
     start_price = binance.fetch_ticker(coin.symbol)['last']
     cell = lambda s, c=6: str(s).ljust(c)
     ob_plot = [],[]
-    print(cell("phase"), cell('mix'), cell('ob'), cell('gain'))
+    print(cell('mix'), cell('ob'), cell('gain'))
     while True:
         price = binance.fetch_ticker(coin.symbol)['last']
         gain = (price - start_price) / start_price
         wave_length = getattr(coin, 'wave_length', 3)
         candles = Candles(coin.symbol, timeFrame, limit=int(wave_length*candles_per_hour))
         fit = candles.wavefit(slice(1, 3))
-        phase = math.cos(fit.phase)
         crest_mix = clamp(unmix(price, fit.zero-fit.amp, fit.zero+fit.amp) * 2 - 1, -1, 1)
         ob, _vol = reduce_order_book(coin.symbol)
         ob_plot[0].append(datetime.datetime.now().timestamp() / 3600)
         ob_plot[1].append(ob)
-        print(cell(round(phase, 2)), cell(round(crest_mix, 2)), cell(round(-ob, 2)), cell(percentage(gain)))
+        print(cell(round(crest_mix, 2)), cell(round(-ob, 2)), cell(percentage(gain)))
 
-        if np.average([phase, crest_mix, -ob]) >= .65:
+        if np.average([crest_mix, -ob]) >= .65:
             try:
                 trade_coin(coin.name, 'BTC', min_price=candles[-2:].avg)
                 break
