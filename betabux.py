@@ -103,7 +103,7 @@ def get_best_coin(coins):
 
         hours = [6, 12, 24, 48]
         candles = Candles(coin.symbol, timeFrame, limit=hours[-1]*candles_per_hour)
-        wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(1, 4)) for h in hours]
+        wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(2, 4)) for h in hours]
         for fit, h in zip(wave_fits, hours): fit.hours = h
 
         phase = lambda fit: math.cos(fit.phase-1.25*math.pi)
@@ -143,7 +143,7 @@ def get_best_coin(coins):
         #show_plots(coin)
 
     best = good_coins[0]
-    if best.gain < .02:
+    if best.gain < .0125:
         print(f"{best.name} not good enough")
         return None
 
