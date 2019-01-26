@@ -107,11 +107,11 @@ def get_best_coin(coins):
         for fit, h in zip(wave_fits, hours): fit.hours = h
 
         phase = lambda fit: math.cos(fit.phase-1.25*math.pi)
-        def lhw_mix(fit):
-            wave_length = fit.hours / fit.freq
-            last_half_wave = candles[-int(wave_length * candles_per_hour / 2):]
-            return unmix(coin.price, last_half_wave.max, last_half_wave.min) * 2 - 1
-        goodness  = lambda fit: fit.amp * fit.freq * np.average([phase(fit), lhw_mix(fit)]) / coin.price
+        #def lhw_mix(fit):
+        #    wave_length = fit.hours / fit.freq
+        #    last_half_wave = candles[-int(wave_length * candles_per_hour / 2):]
+        #    return unmix(coin.price, last_half_wave.max, last_half_wave.min) * 2 - 1
+        goodness  = lambda fit: fit.amp * fit.freq * phase(fit) / coin.price
         coin.good_wave = np.average([goodness(fit) for fit in wave_fits])
         if coin.good_wave < 0: continue
 
@@ -143,7 +143,7 @@ def get_best_coin(coins):
         #show_plots(coin)
 
     best = good_coins[0]
-    if best.gain < .0125:
+    if best.gain < .01:
         print(f"{best.name} not good enough")
         return None
 
