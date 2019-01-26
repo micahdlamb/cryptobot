@@ -116,8 +116,9 @@ def get_best_coin(coins):
         if coin.good_wave < 0: continue
 
         coin.ob, _vol = reduce_order_book(coin.symbol)
+        coin.error = np.average([fit.rmse for fit in wave_fits]) / coin.price
 
-        coin.gain = coin.vol * coin.good_wave * coin.ob
+        coin.gain = coin.vol * coin.good_wave * coin.ob / (1+(coin.error*1e2))
         if coin.gain < 0: continue
         good_coins.append(coin)
 
@@ -136,9 +137,9 @@ def get_best_coin(coins):
     col  = lambda s,c=6: str(s).ljust(c)
     rcol = lambda n,c=6,r=2: str(round(n, r)).ljust(c)
     pcol = lambda n: percentage(n).ljust(6)
-    print(col(''), col('gain'), col('vol', 4), col('wave'), col('ob',3))
+    print(col(''), col('gain'), col('vol', 4), col('wave'), col('ob',3), col('error'))
     for coin in good_coins[:5]:
-        print(col(coin.name), pcol(coin.gain), rcol(coin.vol, 4), pcol(coin.good_wave), rcol(coin.ob,3,1))
+        print(col(coin.name), pcol(coin.gain), rcol(coin.vol, 4), pcol(coin.good_wave), rcol(coin.ob,3,1), pcol(coin.error))
         #show_plots(coin)
 
     best = good_coins[0]
