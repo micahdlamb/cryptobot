@@ -168,7 +168,7 @@ def hold_till_crest(coin):
         ob_plot[1].append(ob)
         print(cell(round(crest_mix, 2)), cell(round(-ob, 2)), cell(percentage(gain)))
 
-        if np.average([crest_mix, -ob]) >= .65:
+        if -ob > .15:#np.average([crest_mix, -ob]) >= .65:
             try:
                 trade_coin(coin.name, 'BTC', min_price=candles[-2:].avg)
                 break
