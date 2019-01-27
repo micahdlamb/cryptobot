@@ -103,7 +103,7 @@ def get_best_coin(coins):
 
         hours = [6, 12, 24, 48]
         candles = Candles(coin.symbol, timeFrame, limit=hours[-1]*candles_per_hour)
-        wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(1, 4)) for h in hours]
+        wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(2, 4)) for h in hours]
         for fit, h in zip(wave_fits, hours): fit.hours = h
 
         phase = lambda fit: math.cos(fit.phase-1.25*math.pi)
@@ -434,7 +434,7 @@ class Candles(list):
         return super().__getitem__(item)
 
 
-def reduce_order_book(symbol, bound=.04, pow=2, limit=500):
+def reduce_order_book(symbol, bound=.06, pow=2, limit=500):
     """Reduces order book to value between -1 -> 1.
        -1 means all orders are asks, 1 means all orders are bids.  Presumably -1 is bad and 1 is good.
        Volumes are weighted less the farther they are from the current price.
