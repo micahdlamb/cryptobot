@@ -52,11 +52,13 @@ def main():
                 holding = get_holding_coin()
 
                 if holding.name == 'BTC':
+                    scale_requirement = 1
                     while True:
                         coins = [Coin(symbol.split('/')[0], symbol, {}) for symbol in symbols]
-                        best = get_best_coin(coins)
+                        best = get_best_coin(coins, scale_requirement)
 
                         if not best:
+                            scale_requirement *= .95
                             time.sleep(5*60)
                             continue
 
@@ -92,7 +94,7 @@ def main():
 timeFrame = '5m'
 candles_per_hour = 12
 
-def get_best_coin(coins):
+def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
     good_coins = []
     tickers = binance.fetch_tickers()
@@ -143,7 +145,7 @@ def get_best_coin(coins):
         #show_plots(coin)
 
     best = good_coins[0]
-    if best.gain < .01:
+    if best.gain < .015 * scale_requirement:
         print(f"{best.name} not good enough")
         return None
 
@@ -166,9 +168,9 @@ def hold_till_crest(coin):
         ob, _vol = reduce_order_book(coin.symbol)
         ob_plot[0].append(datetime.datetime.now().timestamp() / 3600)
         ob_plot[1].append(ob)
-        print(cell(round(crest_mix, 2)), cell(round(-ob, 2)), cell(percentage(gain)))
+        print(cell(round(crest_mix, 2)), cell(round(ob, 2)), cell(percentage(gain)))
 
-        if -ob > .15:#np.average([crest_mix, -ob]) >= .65:
+        if ob < 0:
             try:
                 trade_coin(coin.name, 'BTC', min_price=candles[-2:].avg)
                 break
