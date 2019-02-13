@@ -436,7 +436,7 @@ class Candles(list):
         return super().__getitem__(item)
 
 
-def reduce_order_book(symbol, bound=.06, pow=2, limit=500):
+def reduce_order_book(symbol, bound=.04, pow=2, limit=500):
     """Reduces order book to value between -1 -> 1.
        -1 means all orders are asks, 1 means all orders are bids.  Presumably -1 is bad and 1 is good.
        Volumes are weighted less the farther they are from the current price.
