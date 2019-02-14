@@ -158,6 +158,7 @@ def hold_till_crest(coin):
     cell = lambda s, c=6: str(s).ljust(c)
     ob_plot = [],[]
     print(cell('mix'), cell('ob'), cell('gain'))
+    bound = .06
     while True:
         price = binance.fetch_ticker(coin.symbol)['last']
         gain = (price - start_price) / start_price
@@ -165,7 +166,8 @@ def hold_till_crest(coin):
         candles = Candles(coin.symbol, timeFrame, limit=int(wave_length*candles_per_hour))
         fit = candles.wavefit(slice(1, 3))
         crest_mix = clamp(unmix(price, fit.zero-fit.amp, fit.zero+fit.amp) * 2 - 1, -1, 1)
-        ob, _vol = reduce_order_book(coin.symbol)
+        ob, _vol = reduce_order_book(coin.symbol, bound)
+        bound *= .998
         ob_plot[0].append(datetime.datetime.now().timestamp() / 3600)
         ob_plot[1].append(ob)
         print(cell(round(crest_mix, 2)), cell(round(ob, 2)), cell(percentage(gain)))
@@ -436,7 +438,7 @@ class Candles(list):
         return super().__getitem__(item)
 
 
-def reduce_order_book(symbol, bound=.04, pow=2, limit=500):
+def reduce_order_book(symbol, bound=.06, pow=2, limit=500):
     """Reduces order book to value between -1 -> 1.
        -1 means all orders are asks, 1 means all orders are bids.  Presumably -1 is bad and 1 is good.
        Volumes are weighted less the farther they are from the current price.
