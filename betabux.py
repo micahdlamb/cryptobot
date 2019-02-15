@@ -167,7 +167,7 @@ def hold_till_crest(coin):
         fit = candles.wavefit(slice(1, 3))
         crest_mix = clamp(unmix(price, fit.zero-fit.amp, fit.zero+fit.amp) * 2 - 1, -1, 1)
         ob, _vol = reduce_order_book(coin.symbol, bound)
-        bound *= .998
+        bound *= .995
         ob_plot[0].append(datetime.datetime.now().timestamp() / 3600)
         ob_plot[1].append(ob)
         print(cell(round(crest_mix, 2)), cell(round(ob, 2)), cell(percentage(gain)))
