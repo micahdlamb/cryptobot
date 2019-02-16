@@ -174,7 +174,7 @@ def hold_till_crest(coin):
 
         if ob < 0:
             try:
-                trade_coin(coin.name, 'BTC', min_price=candles[-2:].avg)
+                trade_coin(coin.name, 'BTC')
                 break
             except TimeoutError as err:
                 print(err)
