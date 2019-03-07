@@ -1,11 +1,3 @@
-"""
-Ideas to try:
-Simulate cost function to evaluate how good...
-
-best branches - ffts, avgfft
-copy avgfft -> ffts!!!
-"""
-
 import os, sys, time, math, collections, io, contextlib, traceback, datetime, platform
 import smtplib
 from email.message import EmailMessage
@@ -18,18 +10,10 @@ if platform.system() == 'Linux':
 import matplotlib.pyplot as plt
 
 import ccxt
-
 binance = ccxt.binance({
     'apiKey': os.environ['binance_apiKey'],
     'secret': os.environ['binance_secret']
 })
-
-milli_seconds_in_hour   = 1000*60*60
-milli_seconds_in_minute = 1000*60
-clamp = lambda value, frm, to: max(frm, min(to, value))
-mix   = lambda frm, to, factor: frm + (to - frm) * factor
-unmix = lambda value, frm, to: (value - frm) / (to - frm)
-percentage = lambda value: f"{round(value*100, 2)}%"
 
 
 def main():
@@ -188,35 +172,10 @@ def hold_till_crest(coin):
     cmin, cmax = fit.candles.min, fit.candles.max
     scale_ob = lambda ob: mix(cmax, cmax + cmax-cmin, ob / 2 + .5)
     coin.plots['ob'] = ob_plot[0], [scale_ob(ob) for ob in ob_plot[1]], dict(linestyle='-')
-
     #show_plots(coin)
 
 
-def market_buy(symbol, fraction_of_btc=.95):
-    price = binance.fetch_ticker(symbol)['last']
-    free_btc = binance.fetch_balance()['BTC']['free']
-    amount = binance.amount_to_lots(symbol, free_btc * fraction_of_btc / price)
-    order = binance.create_market_buy_order(symbol, amount)
-    _record_order(order)
-    print(f"Bought {order['filled']} {symbol} at {order['price']}")
-    return order
-
-
-def market_sell(symbol, amount):
-    order = binance.create_market_sell_order(symbol, amount)
-    _record_order(order)
-    print(f"Sold {order['filled']} {symbol} at {order['price']}")
-    return order
-
-
 trade_log = []
-
-
-def _record_order(order):
-    order['fill_time'] = order['timestamp'] / milli_seconds_in_hour
-    btc = sum(float(fill['price']) * float(fill['qty']) for fill in order['info']['fills'])
-    order['price'] = btc / order['filled']
-    trade_log.append(order)
 
 
 def trade_coin(from_coin, to_coin, spread_mix=.5, min_price=None, max_price=None, avoid_partial_fill=False):
@@ -323,7 +282,7 @@ def email_myself_plots(subject, start_balance, coins, log):
     imgs = ""
     bufs = []
     for coin in coins:
-        plt.title(coin.name+(f"  {percentage(coin.gain)}" if hasattr(coin, 'gain') else ""))
+        plt.title(coin.name)
         plt.xlabel("hours")
         plt.xticks(range(-100 * 4, 10 * 4, 4))
         now_hours = datetime.datetime.now().timestamp() / 3600
@@ -358,8 +317,8 @@ def email_myself_plots(subject, start_balance, coins, log):
 def email_myself(msg):
     server = smtplib.SMTP('smtp.gmail.com', 587)
     server.starttls()
-    server.login("micah.d.lamb@gmail.com", os.environ['gmail_app_password'])
-    server.send_message(msg, "micah.d.lamb@gmail.com", ["micah.d.lamb@gmail.com"])
+    server.login(os.environ['from_addr'], os.environ['gmail_app_password'])
+    server.send_message(msg, os.environ['from_addr'], os.environ['to_addrs'].split())
     server.quit()
 
 
@@ -471,7 +430,6 @@ def get_balance():
     tickers = binance.fetch_tickers()
     tradeable = lambda coin: coin == 'BTC' or f"{coin}/BTC" in tickers
     balance = binance.fetch_balance()
-    del balance['BNB'] # Used for fees not trading
     balance = {coin: info for coin, info in balance.items() if tradeable(coin)}
     
     Coin = collections.namedtuple("Coin", "name amount amount_free amount_used btc btc_free usdt")
@@ -522,6 +480,14 @@ class Tee:
     def flush(self):
         for file in self.files:
             file.flush()
+
+
+milli_seconds_in_hour   = 1000*60*60
+milli_seconds_in_minute = 1000*60
+clamp = lambda value, frm, to: max(frm, min(to, value))
+mix   = lambda frm, to, factor: frm + (to - frm) * factor
+unmix = lambda value, frm, to: (value - frm) / (to - frm)
+percentage = lambda value: f"{round(value*100, 2)}%"
 
 
 if __name__ == "__main__":
