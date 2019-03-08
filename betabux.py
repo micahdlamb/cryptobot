@@ -20,12 +20,12 @@ def main():
     start_balance = get_balance()
 
     while True:
-        start_time = time.time()
         with io.StringIO() as log, contextlib.redirect_stdout(Tee(log, sys.stdout)):
             try:
                 tickers = binance.fetch_tickers()
                 symbols = [symbol for symbol, market in binance.markets.items() if market['active']
                            and market['quote'] == 'BTC'
+                           and symbol != 'BNB/BTC' # BNB used for fees
                            and 10 ** -market['precision']['price'] / tickers[symbol]['last'] < .001
                            and tickers[symbol]['quoteVolume'] > 50]
 
@@ -170,7 +170,7 @@ def hold_till_crest(coin):
     coin.plots["hold wave"] = times, prices, dict(linestyle='--')
 
     cmin, cmax = fit.candles.min, fit.candles.max
-    scale_ob = lambda ob: mix(cmax, cmax + cmax-cmin, ob / 2 + .5)
+    scale_ob = lambda ob: mix(cmax, cmax + cmax-cmin, ob)
     coin.plots['ob'] = ob_plot[0], [scale_ob(ob) for ob in ob_plot[1]], dict(linestyle='-')
     #show_plots(coin)
 
