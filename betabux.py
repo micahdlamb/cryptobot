@@ -92,20 +92,16 @@ def get_best_coin(coins, scale_requirement):
         wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(2, 4)) for h in hours]
         for fit, h in zip(wave_fits, hours): fit.hours = h
 
-        phase = lambda fit: math.cos(fit.phase-1.25*math.pi)
-        #def lhw_mix(fit):
-        #    wave_length = fit.hours / fit.freq
-        #    last_half_wave = candles[-int(wave_length * candles_per_hour / 2):]
-        #    return unmix(coin.price, last_half_wave.max, last_half_wave.min) * 2 - 1
-        goodness  = lambda fit: fit.amp * fit.freq * phase(fit) / coin.price
-        coin.good_wave = np.average([goodness(fit) for fit in wave_fits])
-        if coin.good_wave < 0: continue
+        reduce_wave = lambda fit: fit.amp * fit.freq * math.cos(fit.phase-1.25*math.pi) / coin.price
+        coin.wave_goodness = np.average([reduce_wave(fit) for fit in wave_fits])
+        #print(coin.symbol, [reduce_wave(fit) for fit in wave_fits])
+        if coin.wave_goodness < 0: continue
 
         coin.ob, _vol = reduce_order_book(coin.symbol)
         coin.error = np.average([fit.rmse for fit in wave_fits]) / coin.price
 
-        coin.gain = coin.vol * coin.good_wave * coin.ob / (1+(coin.error*1e2))
-        if coin.gain < 0: continue
+        coin.goodness = coin.vol * coin.wave_goodness * coin.ob / (1+(coin.error*1e2))
+        if coin.goodness < 0: continue
         good_coins.append(coin)
 
         wait_fit = max(wave_fits, key=lambda fit: fit.amp * fit.freq / fit.hours)
@@ -119,17 +115,17 @@ def get_best_coin(coins, scale_requirement):
             coin.plots[f"wave {fit.hours}"] = times, prices, dict(linestyle='--')
 
     if not good_coins: return None
-    good_coins.sort(key=lambda coin: coin.gain, reverse=True)
-    col  = lambda s,c=6: str(s).ljust(c)
-    rcol = lambda n,c=6,r=2: str(round(n, r)).ljust(c)
+    good_coins.sort(key=lambda coin: coin.goodness, reverse=True)
+    col  = lambda s,c=5: str(s).ljust(c)
+    rcol = lambda n,c=5,r=2: str(round(n, r)).ljust(c)
     pcol = lambda n: percentage(n).ljust(6)
-    print(col(''), col('gain'), col('vol', 4), col('wave'), col('ob',3), col('error'))
+    print(col(''), col('good'), col('vol'), col('wave'), col('ob',3), col('error'))
     for coin in good_coins[:5]:
-        print(col(coin.name), pcol(coin.gain), rcol(coin.vol, 4), pcol(coin.good_wave), rcol(coin.ob,3,1), pcol(coin.error))
+        print(col(coin.name), rcol(coin.goodness*1000), rcol(coin.vol), rcol(coin.wave_goodness*1000), rcol(coin.ob,3,1), pcol(coin.error))
         #show_plots(coin)
 
     best = good_coins[0]
-    if best.gain < .015 * scale_requirement:
+    if best.goodness < .015 * scale_requirement:
         print(f"{best.name} not good enough")
         return None
 
