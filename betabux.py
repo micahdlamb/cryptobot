@@ -87,7 +87,7 @@ def get_best_coin(coins, scale_requirement):
         coin.price  = ticker['last']
         coin.vol    = math.log10(ticker['quoteVolume'])
 
-        hours = [6, 12, 24, 48]
+        hours = [12, 24, 48]
         candles = Candles(coin.symbol, timeFrame, limit=hours[-1]*candles_per_hour)
         wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(2, 4)) for h in hours]
         for fit, h in zip(wave_fits, hours): fit.hours = h
@@ -98,7 +98,7 @@ def get_best_coin(coins, scale_requirement):
         if coin.wave_goodness < 0: continue
 
         coin.ob, _vol = reduce_order_book(coin.symbol)
-        coin.error = np.average([fit.rmse for fit in wave_fits]) / coin.price
+        coin.error = np.average([fit.last_wave_rmse for fit in wave_fits]) / coin.price
 
         coin.goodness = coin.vol * coin.wave_goodness * coin.ob / (1+(coin.error*1e2))
         if coin.goodness < 0: continue
@@ -147,7 +147,7 @@ def hold_till_crest(coin):
         fit = candles.wavefit(slice(1, 3))
         crest_mix = clamp(unmix(price, fit.zero-fit.amp, fit.zero+fit.amp) * 2 - 1, -1, 1)
         ob, _vol = reduce_order_book(coin.symbol, bound)
-        bound *= .995
+        bound *= .99
         ob_plot[0].append(datetime.datetime.now().timestamp() / 3600)
         ob_plot[1].append(ob)
         print(cell(round(crest_mix, 2)), cell(round(ob, 2)), cell(percentage(gain)))
@@ -162,8 +162,8 @@ def hold_till_crest(coin):
             time.sleep(5*60)
 
     times, prices = fit.prices
-    coin.plots["hold zero"] = [times[0], times[-1]], [fit.zero, fit.zero], dict(linestyle='--')
-    coin.plots["hold wave"] = times, prices, dict(linestyle='--')
+    #coin.plots["hold zero"] = [times[0], times[-1]], [fit.zero, fit.zero], dict(linestyle='--')
+    #coin.plots["hold wave"] = times, prices, dict(linestyle='--')
 
     cmin, cmax = fit.candles.min, fit.candles.max
     scale_ob = lambda ob: mix(cmax, cmax + cmax-cmin, ob)
@@ -366,7 +366,7 @@ class Candles(list):
     def acceleration(self):
         return self.polyfit(2)[0] * 2
 
-    class WaveFit(collections.namedtuple("Wave", "zero freq amp phase rmse")): pass
+    class WaveFit(collections.namedtuple("Wave", "zero freq amp phase last_wave_rmse")): pass
 
     def wavefit(self, freq_slice):
         times, prices = self.prices
@@ -378,8 +378,9 @@ class Candles(list):
         # amplitudes * 2 to account for imaginary component
         val = lambda x: np.real(wave * (np.cos(x*freq*2*np.pi/n) + 1j * np.sin(x*freq*2*np.pi/n)))*2
         values = zero + np.array([val(i) for i in range(n)])
-        rmse = np.sqrt(((values - prices)**2).mean())
-        wave_fit = self.WaveFit(zero, freq, abs(wave)*2, np.angle(wave) % (2*np.pi), rmse)
+        last_wave = len(values) // freq
+        last_wave_rmse = np.sqrt(((values[-last_wave:] - prices[-last_wave:])**2).mean())
+        wave_fit = self.WaveFit(zero, freq, abs(wave)*2, np.angle(wave) % (2*np.pi), last_wave_rmse)
         wave_fit.candles = self
         wave_fit.prices  = (times, values)
         return wave_fit
