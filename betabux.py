@@ -102,7 +102,7 @@ def get_best_coin(coins, scale_requirement):
         line = candles.polyfit(1)
         coin.velocity = line[0] / coin.price
 
-        coin.goodness = coin.vol * coin.wave * coin.ob / (1+(coin.error*1e2 + abs(coin.velocity)*1e3))
+        coin.goodness = coin.vol * coin.wave * coin.ob**2 / (1+(coin.error*1e2 + abs(coin.velocity)*1e3))
         if coin.goodness < 0: continue
         good_coins.append(coin)
 
@@ -129,7 +129,7 @@ def get_best_coin(coins, scale_requirement):
         #show_plots(coin)
 
     best = good_coins[0]
-    if best.goodness < 1.5 * scale_requirement:
+    if best.goodness < 1 * scale_requirement:
         print(f"{best.name} not good enough")
         return None
 
