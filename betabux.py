@@ -87,27 +87,31 @@ def get_best_coin(coins, scale_requirement):
         coin.price  = ticker['last']
         coin.vol    = math.log10(ticker['quoteVolume'])
 
-        hours = [12, 24, 48]
+        hours = [6, 12, 24, 48]
         candles = Candles(coin.symbol, timeFrame, limit=hours[-1]*candles_per_hour)
-        wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(2, 4)) for h in hours]
+        wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(1, 4)) for h in hours]
         for fit, h in zip(wave_fits, hours): fit.hours = h
 
-        reduce_wave = lambda fit: fit.amp * fit.freq * math.cos(fit.phase-1.25*math.pi) / coin.price
-        coin.wave_goodness = np.average([reduce_wave(fit) for fit in wave_fits])
+        reduce_wave = lambda fit: fit.amp * fit.freq * math.cos(fit.phase-1.25*math.pi) / fit.hours**.5 / coin.price
+        coin.wave = np.average([reduce_wave(fit) for fit in wave_fits]) * 1e3
         #print(coin.symbol, [reduce_wave(fit) for fit in wave_fits])
-        if coin.wave_goodness < 0: continue
+        if coin.wave < 0: continue
 
         coin.ob, _vol = reduce_order_book(coin.symbol)
-        coin.error = np.average([fit.last_wave_rmse for fit in wave_fits]) / coin.price
+        coin.error = np.average([fit.rmse for fit in wave_fits]) / coin.price
+        line = candles.polyfit(1)
+        coin.velocity = line[0] / coin.price
 
-        coin.goodness = coin.vol * coin.wave_goodness * coin.ob / (1+(coin.error*1e2))
+        coin.goodness = coin.vol * coin.wave * coin.ob / (1+(coin.error*1e2 + abs(coin.velocity)*1e3))
         if coin.goodness < 0: continue
         good_coins.append(coin)
 
         wait_fit = max(wave_fits, key=lambda fit: fit.amp * fit.freq / fit.hours)
         coin.wave_length = wait_fit.hours / wait_fit.freq
 
-        coin.plots["actual"] = *candles[-18*candles_per_hour:].prices, dict(linestyle='-')
+        times, prices = candles[-18*candles_per_hour:].prices
+        coin.plots["actual"] = times, prices, dict(linestyle='-')
+        coin.plots["line"]   = times, np.polyval(line, times), dict(linestyle=':')
         for fit in wave_fits:
             times, prices = fit.prices
             times, prices = times[-18*candles_per_hour:], prices[-18*candles_per_hour:]
@@ -119,13 +123,13 @@ def get_best_coin(coins, scale_requirement):
     col  = lambda s,c=5: str(s).ljust(c)
     rcol = lambda n,c=5,r=2: str(round(n, r)).ljust(c)
     pcol = lambda n: percentage(n).ljust(6)
-    print(col(''), col('good'), col('vol'), col('wave'), col('ob',3), col('error'))
+    print(col(''), col('good'), col('vol'), col('wave'), col('ob',3), col('error'), col('vel'))
     for coin in good_coins[:5]:
-        print(col(coin.name), rcol(coin.goodness*1000), rcol(coin.vol), rcol(coin.wave_goodness*1000), rcol(coin.ob,3,1), pcol(coin.error))
+        print(col(coin.name), rcol(coin.goodness), rcol(coin.vol), rcol(coin.wave), rcol(coin.ob,3,1), pcol(coin.error), pcol(coin.velocity))
         #show_plots(coin)
 
     best = good_coins[0]
-    if best.goodness < .015 * scale_requirement:
+    if best.goodness < 1.5 * scale_requirement:
         print(f"{best.name} not good enough")
         return None
 
@@ -366,7 +370,7 @@ class Candles(list):
     def acceleration(self):
         return self.polyfit(2)[0] * 2
 
-    class WaveFit(collections.namedtuple("Wave", "zero freq amp phase last_wave_rmse")): pass
+    class WaveFit(collections.namedtuple("Wave", "zero freq amp phase rmse")): pass
 
     def wavefit(self, freq_slice):
         times, prices = self.prices
@@ -378,9 +382,8 @@ class Candles(list):
         # amplitudes * 2 to account for imaginary component
         val = lambda x: np.real(wave * (np.cos(x*freq*2*np.pi/n) + 1j * np.sin(x*freq*2*np.pi/n)))*2
         values = zero + np.array([val(i) for i in range(n)])
-        last_wave = len(values) // freq
-        last_wave_rmse = np.sqrt(((values[-last_wave:] - prices[-last_wave:])**2).mean())
-        wave_fit = self.WaveFit(zero, freq, abs(wave)*2, np.angle(wave) % (2*np.pi), last_wave_rmse)
+        rmse = np.sqrt(((values - prices)**2).mean())
+        wave_fit = self.WaveFit(zero, freq, abs(wave)*2, np.angle(wave) % (2*np.pi), rmse)
         wave_fit.candles = self
         wave_fit.prices  = (times, values)
         return wave_fit
