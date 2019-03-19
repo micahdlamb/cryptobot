@@ -85,38 +85,33 @@ def get_best_coin(coins, scale_requirement):
     for coin in coins:
         ticker = tickers[coin.symbol]
         coin.price  = ticker['last']
-        coin.vol    = math.log10(ticker['quoteVolume'])
+        coin.vol    = ticker['quoteVolume']**(1/3)
 
         hours = [6, 12, 24, 48]
         candles = Candles(coin.symbol, timeFrame, limit=hours[-1]*candles_per_hour)
         wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(1, 4)) for h in hours]
         for fit, h in zip(wave_fits, hours): fit.hours = h
 
-        reduce_wave = lambda fit: fit.amp * fit.freq * math.cos(fit.phase-1.25*math.pi) / fit.hours**.5 / coin.price
-        coin.wave = np.average([reduce_wave(fit) for fit in wave_fits]) * 1e3
+        reduce_wave = lambda fit: fit.amp * fit.freq * math.cos(fit.phase-1.25*math.pi) / fit.hours**.5
+        coin.wave = np.average([reduce_wave(fit) for fit in wave_fits]) * 1e3 / coin.price
         #print(coin.symbol, [reduce_wave(fit) for fit in wave_fits])
         if coin.wave < 0: continue
 
         coin.ob, _vol = reduce_order_book(coin.symbol)
         coin.error = np.average([fit.rmse for fit in wave_fits]) / coin.price
-        line = candles.polyfit(1)
-        coin.velocity = line[0] / coin.price
+        line_fits = [fit.candles.polyfit(1) for fit in wave_fits]
+        coin.velocity = np.average([abs(line_fit[0]) * h for line_fit, h in zip(line_fits, hours)]) / coin.price
 
-        coin.goodness = coin.vol * coin.wave * coin.ob**2 / (1+(coin.error*1e2 + abs(coin.velocity)*1e3))
+        coin.goodness = coin.vol * coin.wave * coin.ob**2 / (1+(coin.error*1e2 + coin.velocity*1e2))
         if coin.goodness < 0: continue
         good_coins.append(coin)
 
-        wait_fit = max(wave_fits, key=lambda fit: fit.amp * fit.freq / fit.hours)
-        coin.wave_length = wait_fit.hours / wait_fit.freq
-
-        times, prices = candles[-18*candles_per_hour:].prices
-        coin.plots["actual"] = times, prices, dict(linestyle='-')
-        coin.plots["line"]   = times, np.polyval(line, times), dict(linestyle=':')
-        for fit in wave_fits:
-            times, prices = fit.prices
+        coin.plots["actual"] = *candles[-18 * candles_per_hour:].prices, dict(linestyle='-')
+        for line_fit, wave_fit in zip(line_fits, wave_fits):
+            times, prices = wave_fit.prices
             times, prices = times[-18*candles_per_hour:], prices[-18*candles_per_hour:]
-            #coin.plots[f"zero {fit.hours}"] = [times[0], times[-1]], [fit.zero, fit.zero], dict(linestyle='--')
-            coin.plots[f"wave {fit.hours}"] = times, prices, dict(linestyle='--')
+            #coin.plots[f"line {wave_fit.hours}"] = times, np.polyval(line_fit, times), dict(linestyle='--')
+            coin.plots[f"wave {wave_fit.hours}"] = times, prices, dict(linestyle='--')
 
     if not good_coins: return None
     good_coins.sort(key=lambda coin: coin.goodness, reverse=True)
