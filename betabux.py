@@ -87,6 +87,10 @@ def get_best_coin(coins, scale_requirement):
         coin.price  = ticker['last']
         coin.vol    = ticker['quoteVolume']**(1/3)
 
+        #def proportions(values):
+        #    total = sum([abs(v) for v in values])
+        #    return [round(abs(v)/total,2) for v in values]
+
         hours = [6, 12, 24, 48]
         candles = Candles(coin.symbol, timeFrame, limit=hours[-1]*candles_per_hour)
         wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(1, 4)) for h in hours]
@@ -94,13 +98,15 @@ def get_best_coin(coins, scale_requirement):
 
         reduce_wave = lambda fit: fit.amp * fit.freq * math.cos(fit.phase-1.25*math.pi) / fit.hours**.5
         coin.wave = np.average([reduce_wave(fit) for fit in wave_fits]) * 1e3 / coin.price
-        #print(coin.symbol, [reduce_wave(fit) for fit in wave_fits])
+        #print(coin.symbol, proportions([reduce_wave(fit) for fit in wave_fits]))
         if coin.wave < 0: continue
 
         coin.ob, _vol = reduce_order_book(coin.symbol)
+        if coin.ob < 0: continue
         coin.error = np.average([fit.rmse for fit in wave_fits]) / coin.price
         line_fits = [fit.candles.polyfit(1) for fit in wave_fits]
         coin.velocity = np.average([abs(line_fit[0]) * h for line_fit, h in zip(line_fits, hours)]) / coin.price
+        #print(coin.symbol, proportions([abs(line_fit[0]) * h for line_fit, h in zip(line_fits, hours)]))
 
         coin.goodness = coin.vol * coin.wave * coin.ob**2 / (1+(coin.error*1e2 + coin.velocity*1e2))
         if coin.goodness < 0: continue
