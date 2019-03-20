@@ -130,8 +130,9 @@ def get_best_coin(coins, scale_requirement):
         #show_plots(coin)
 
     best = good_coins[0]
-    if best.goodness < 3 * scale_requirement:
-        print(f"{best.name} not good enough")
+    requirement = 1.5 * scale_requirement
+    if best.goodness < requirement:
+        print(f"{best.name} not good enough ({round(requirement,2)})")
         return None
 
     return best
