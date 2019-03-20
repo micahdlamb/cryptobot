@@ -105,7 +105,7 @@ def get_best_coin(coins, scale_requirement):
         if coin.ob < 0: continue
         coin.error = np.average([fit.rmse for fit in wave_fits]) / coin.price
         line_fits = [fit.candles.polyfit(1) for fit in wave_fits]
-        coin.velocity = np.average([abs(line_fit[0]) * h for line_fit, h in zip(line_fits, hours)]) / coin.price
+        coin.velocity = np.average([abs(min(line_fit[0],0)) * h for line_fit, h in zip(line_fits, hours)]) / coin.price
         #print(coin.symbol, proportions([abs(line_fit[0]) * h for line_fit, h in zip(line_fits, hours)]))
 
         coin.goodness = coin.vol * coin.wave * coin.ob**2 / (1+(coin.error*1e2 + coin.velocity*1e2))
@@ -130,7 +130,7 @@ def get_best_coin(coins, scale_requirement):
         #show_plots(coin)
 
     best = good_coins[0]
-    if best.goodness < 1 * scale_requirement:
+    if best.goodness < 3 * scale_requirement:
         print(f"{best.name} not good enough")
         return None
 
