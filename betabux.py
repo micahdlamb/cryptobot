@@ -121,12 +121,12 @@ def get_best_coin(coins, scale_requirement):
     rcol = lambda n,c=5,r=2: str(round(n, r)).ljust(c)
     pcol = lambda n: percentage(n).ljust(6)
     print(col(''), col('good'), col('vol'), col('wave'), col('ob',3))
-    for coin in good_coins:
+    for coin in good_coins[:5]:
         print(col(coin.name), rcol(coin.goodness), rcol(coin.vol), rcol(coin.wave), rcol(coin.ob,3,1))
         #show_plots(coin)
 
     best = good_coins[0]
-    requirement = 1.5 * scale_requirement
+    requirement = 1 * scale_requirement
     if best.goodness < requirement:
         print(f"{best.name} not good enough ({round(requirement,2)})")
         return None
