@@ -85,48 +85,44 @@ def get_best_coin(coins, scale_requirement):
     for coin in coins:
         ticker = tickers[coin.symbol]
         coin.price  = ticker['last']
-        coin.vol    = ticker['quoteVolume']**(1/3)
+        coin.vol    = math.log10(ticker['quoteVolume'])
 
         #def proportions(values):
         #    total = sum([abs(v) for v in values])
-        #    return [round(abs(v)/total,2) for v in values]
+        #    return [round(abs(v)/(total or 1),2) for v in values]
 
         hours = [6, 12, 24, 48]
         candles = Candles(coin.symbol, timeFrame, limit=hours[-1]*candles_per_hour)
-        wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(1, 4)) for h in hours]
+        wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(2, 4)) for h in hours]
         for fit, h in zip(wave_fits, hours): fit.hours = h
 
-        reduce_wave = lambda fit: fit.amp * fit.freq * math.cos(fit.phase-1.25*math.pi) / fit.hours**.5
-        coin.wave = np.average([reduce_wave(fit) for fit in wave_fits]) * 1e3 / coin.price
-        #print(coin.symbol, proportions([reduce_wave(fit) for fit in wave_fits]))
+        non_wave    = lambda fit: abs(fit.candles.velocity) * fit.hours + fit.rmse
+        reduce_wave = lambda fit: max(0, fit.amp * 2 * fit.freq - non_wave(fit)) * math.cos(fit.phase-1.25*math.pi)
+        coin.wave = np.average([reduce_wave(fit) for fit in wave_fits]) * 1e2 / coin.price
+        #print(coin.symbol, proportions([reduce_wave(fit) for fit in wave_fits]), round(coin.wave,2))
         if coin.wave < 0: continue
 
         coin.ob, _vol = reduce_order_book(coin.symbol)
         if coin.ob < 0: continue
-        coin.error = np.average([fit.rmse for fit in wave_fits]) / coin.price
-        line_fits = [fit.candles.polyfit(1) for fit in wave_fits]
-        coin.velocity = np.average([abs(min(line_fit[0],0)) * h for line_fit, h in zip(line_fits, hours)]) / coin.price
-        #print(coin.symbol, proportions([abs(line_fit[0]) * h for line_fit, h in zip(line_fits, hours)]))
 
-        coin.goodness = coin.vol * coin.wave * coin.ob**2 / (1+(coin.error*1e2 + coin.velocity*1e2))
+        coin.goodness = coin.vol * coin.wave * coin.ob
         if coin.goodness < 0: continue
         good_coins.append(coin)
 
-        coin.plots["actual"] = *candles[-18 * candles_per_hour:].prices, dict(linestyle='-')
-        for line_fit, wave_fit in zip(line_fits, wave_fits):
-            times, prices = wave_fit.prices
-            times, prices = times[-18*candles_per_hour:], prices[-18*candles_per_hour:]
-            #coin.plots[f"line {wave_fit.hours}"] = times, np.polyval(line_fit, times), dict(linestyle='--')
-            coin.plots[f"wave {wave_fit.hours}"] = times, prices, dict(linestyle='--')
+        show_candles = 18 * candles_per_hour
+        coin.plots["actual"] = *candles[-show_candles:].prices, dict(linestyle='-')
+        for fit in wave_fits:
+            times, prices = fit.prices
+            coin.plots[f"wave {fit.hours}"] = times[-show_candles:], prices[-show_candles:], dict(linestyle='--')
 
     if not good_coins: return None
     good_coins.sort(key=lambda coin: coin.goodness, reverse=True)
     col  = lambda s,c=5: str(s).ljust(c)
     rcol = lambda n,c=5,r=2: str(round(n, r)).ljust(c)
     pcol = lambda n: percentage(n).ljust(6)
-    print(col(''), col('good'), col('vol'), col('wave'), col('ob',3), col('error'), col('vel'))
-    for coin in good_coins[:5]:
-        print(col(coin.name), rcol(coin.goodness), rcol(coin.vol), rcol(coin.wave), rcol(coin.ob,3,1), pcol(coin.error), pcol(coin.velocity))
+    print(col(''), col('good'), col('vol'), col('wave'), col('ob',3))
+    for coin in good_coins:
+        print(col(coin.name), rcol(coin.goodness), rcol(coin.vol), rcol(coin.wave), rcol(coin.ob,3,1))
         #show_plots(coin)
 
     best = good_coins[0]
@@ -153,7 +149,7 @@ def hold_till_crest(coin):
         fit = candles.wavefit(slice(1, 3))
         crest_mix = clamp(unmix(price, fit.zero-fit.amp, fit.zero+fit.amp) * 2 - 1, -1, 1)
         ob, _vol = reduce_order_book(coin.symbol, bound)
-        bound *= .99
+        bound *= .985
         ob_plot[0].append(datetime.datetime.now().timestamp() / 3600)
         ob_plot[1].append(ob)
         print(cell(round(crest_mix, 2)), cell(round(ob, 2)), cell(percentage(gain)))
