@@ -80,7 +80,7 @@ candles_per_hour = 12
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 1 * scale_requirement
+    requirement = 1.5 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
@@ -88,19 +88,15 @@ def get_best_coin(coins, scale_requirement):
         coin.price  = ticker['last']
         coin.vol    = math.log10(ticker['quoteVolume'])
 
-        #def proportions(values):
-        #    total = sum([abs(v) for v in values])
-        #    return [round(abs(v)/(total or 1),2) for v in values]
-
         hours = [6, 12, 24, 48]
         candles = Candles(coin.symbol, timeFrame, limit=hours[-1]*candles_per_hour)
-        wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(2, 4)) for h in hours]
+        wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(1, 3)) for h in hours]
         for fit, h in zip(wave_fits, hours): fit.hours = h
 
         non_wave    = lambda fit: abs(fit.candles.velocity) * fit.hours + fit.rmse
         reduce_wave = lambda fit: max(0, fit.amp * 2 * fit.freq - non_wave(fit)) * math.cos(fit.phase-1.25*math.pi)
-        coin.wave = np.average([reduce_wave(fit) for fit in wave_fits]) * 1e2 / coin.price
-        #print(coin.symbol, proportions([reduce_wave(fit) for fit in wave_fits]), round(coin.wave,2))
+        waves = [reduce_wave(fit) for fit in wave_fits]
+        coin.wave = np.average(waves) * 1e2 / coin.price
         if coin.vol * coin.wave < requirement: continue
 
         coin.ob, _vol = reduce_order_book(coin.symbol)
@@ -110,11 +106,15 @@ def get_best_coin(coins, scale_requirement):
         if coin.goodness < 0: continue
         good_coins.append(coin)
 
+        def proportions(values):
+            total = sum([abs(v) for v in values])
+            return [round(v/(total or 1),2) for v in values]
+
         show_candles = 18 * candles_per_hour
         coin.plots["actual"] = *candles[-show_candles:].prices, dict(linestyle='-')
-        for fit in wave_fits:
+        for fit, wave in zip(wave_fits, proportions(waves)):
             times, prices = fit.prices
-            coin.plots[f"wave {fit.hours}"] = times[-show_candles:], prices[-show_candles:], dict(linestyle='--')
+            coin.plots[f"wave {fit.hours} ({wave})"] = times[-show_candles:], prices[-show_candles:], dict(linestyle='--')
 
     if not good_coins: return None
     good_coins.sort(key=lambda coin: coin.goodness, reverse=True)
