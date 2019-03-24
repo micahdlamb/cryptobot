@@ -80,7 +80,7 @@ candles_per_hour = 12
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 1.5 * scale_requirement
+    requirement = 1 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
@@ -95,26 +95,27 @@ def get_best_coin(coins, scale_requirement):
 
         non_wave    = lambda fit: abs(fit.candles.velocity) * fit.hours + fit.rmse
         reduce_wave = lambda fit: max(0, fit.amp * 2 * fit.freq - non_wave(fit)) * math.cos(fit.phase-1.25*math.pi)
-        waves = [reduce_wave(fit) for fit in wave_fits]
-        coin.wave = np.average(waves) * 1e2 / coin.price
+        waves = [reduce_wave(fit) * 1e2 / coin.price for fit in wave_fits]
+        coin.wave = np.average(waves)
         if coin.vol * coin.wave < requirement: continue
 
         coin.ob, _vol = reduce_order_book(coin.symbol)
         if coin.ob < 0: continue
 
-        coin.goodness = coin.vol * coin.wave * coin.ob
+        coin.goodness = coin.vol * coin.wave * coin.ob**2
         if coin.goodness < 0: continue
         good_coins.append(coin)
 
-        def proportions(values):
-            total = sum([abs(v) for v in values])
-            return [round(v/(total or 1),2) for v in values]
+        #def proportions(values):
+        #    total = sum([abs(v) for v in values])
+        #    return [round(v/(total or 1),2) for v in values]
 
         show_candles = 18 * candles_per_hour
         coin.plots["actual"] = *candles[-show_candles:].prices, dict(linestyle='-')
-        for fit, wave in zip(wave_fits, proportions(waves)):
+        for fit, wave in zip(wave_fits, waves):
             times, prices = fit.prices
-            coin.plots[f"wave {fit.hours} ({wave})"] = times[-show_candles:], prices[-show_candles:], dict(linestyle='--')
+            label = f"wave {fit.hours} ({round(wave, 2)})"
+            coin.plots[label] = times[-show_candles:], prices[-show_candles:], dict(linestyle='--')
 
     if not good_coins: return None
     good_coins.sort(key=lambda coin: coin.goodness, reverse=True)
@@ -142,26 +143,31 @@ def hold_till_crest(coin):
     print(cell('mix'), cell('ob'), cell('gain'))
     bound = .06
     while True:
-        price = binance.fetch_ticker(coin.symbol)['last']
-        gain = (price - start_price) / start_price
-        wave_length = getattr(coin, 'wave_length', 3)
-        candles = Candles(coin.symbol, timeFrame, limit=int(wave_length*candles_per_hour))
-        fit = candles.wavefit(slice(1, 3))
-        crest_mix = clamp(unmix(price, fit.zero-fit.amp, fit.zero+fit.amp) * 2 - 1, -1, 1)
-        ob, _vol = reduce_order_book(coin.symbol, bound)
-        bound *= .985
-        ob_plot[0].append(datetime.datetime.now().timestamp() / 3600)
-        ob_plot[1].append(ob)
-        print(cell(round(crest_mix, 2)), cell(round(ob, 2)), cell(percentage(gain)))
+        try:
+            price = binance.fetch_ticker(coin.symbol)['last']
+            gain = (price - start_price) / start_price
+            wave_length = getattr(coin, 'wave_length', 3)
+            candles = Candles(coin.symbol, timeFrame, limit=int(wave_length*candles_per_hour))
+            fit = candles.wavefit(slice(1, 3))
+            crest_mix = clamp(unmix(price, fit.zero-fit.amp, fit.zero+fit.amp) * 2 - 1, -1, 1)
+            ob, _vol = reduce_order_book(coin.symbol, bound)
+            bound *= .98
+            ob_plot[0].append(datetime.datetime.now().timestamp() / 3600)
+            ob_plot[1].append(ob)
+            print(cell(round(crest_mix, 2)), cell(round(ob, 2)), cell(percentage(gain)))
 
-        if ob < 0:
-            try:
-                trade_coin(coin.name, 'BTC')
-                break
-            except TimeoutError as err:
-                print(err)
-        else:
-            time.sleep(5*60)
+            if ob < 0:
+                try:
+                    trade_coin(coin.name, 'BTC')
+                    break
+                except TimeoutError as err:
+                    print(err)
+            else:
+                time.sleep(5*60)
+
+        except:
+            time.sleep(5 * 60)
+            continue
 
     times, prices = fit.prices
     #coin.plots["hold zero"] = [times[0], times[-1]], [fit.zero, fit.zero], dict(linestyle='--')
