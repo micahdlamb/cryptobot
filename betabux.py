@@ -80,7 +80,7 @@ candles_per_hour = 12
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 1 * scale_requirement
+    requirement = .85 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
@@ -140,40 +140,28 @@ def hold_till_crest(coin):
     start_price = binance.fetch_ticker(coin.symbol)['last']
     cell = lambda s, c=6: str(s).ljust(c)
     ob_plot = [],[]
-    print(cell('mix'), cell('ob'), cell('gain'))
+    print(cell('ob'), cell('gain'))
     bound = .06
     while True:
-        try:
-            price = binance.fetch_ticker(coin.symbol)['last']
-            gain = (price - start_price) / start_price
-            wave_length = getattr(coin, 'wave_length', 3)
-            candles = Candles(coin.symbol, timeFrame, limit=int(wave_length*candles_per_hour))
-            fit = candles.wavefit(slice(1, 3))
-            crest_mix = clamp(unmix(price, fit.zero-fit.amp, fit.zero+fit.amp) * 2 - 1, -1, 1)
-            ob, _vol = reduce_order_book(coin.symbol, bound)
-            bound *= .98
-            ob_plot[0].append(datetime.datetime.now().timestamp() / 3600)
-            ob_plot[1].append(ob)
-            print(cell(round(crest_mix, 2)), cell(round(ob, 2)), cell(percentage(gain)))
+        price = binance.fetch_ticker(coin.symbol)['last']
+        gain = (price - start_price) / start_price
+        ob, _vol = reduce_order_book(coin.symbol, bound)
+        bound *= .96
+        ob_plot[0].append(datetime.datetime.now().timestamp() / 3600)
+        ob_plot[1].append(ob)
+        print(cell(round(ob, 2)), cell(percentage(gain)))
 
-            if ob < 0:
-                try:
-                    trade_coin(coin.name, 'BTC')
-                    break
-                except TimeoutError as err:
-                    print(err)
-            else:
-                time.sleep(5*60)
+        if ob < 0:
+            try:
+                trade_coin(coin.name, 'BTC')
+                break
+            except TimeoutError as err:
+                print(err)
+        else:
+            time.sleep(5*60)
 
-        except:
-            time.sleep(5 * 60)
-            continue
-
-    times, prices = fit.prices
-    #coin.plots["hold zero"] = [times[0], times[-1]], [fit.zero, fit.zero], dict(linestyle='--')
-    #coin.plots["hold wave"] = times, prices, dict(linestyle='--')
-
-    cmin, cmax = fit.candles.min, fit.candles.max
+    candles = Candles(coin.symbol, '4h', limit=2)
+    cmin, cmax = candles.min, candles.max
     scale_ob = lambda ob: mix(cmax, cmax + cmax-cmin, ob)
     coin.plots['ob'] = ob_plot[0], [scale_ob(ob) for ob in ob_plot[1]], dict(linestyle='-')
     #show_plots(coin)
@@ -473,6 +461,20 @@ def round_price_up(symbol, price):
 def round_price_down(symbol, price):
     scale = 10**binance.markets[symbol]['precision']['price']
     return math.floor(price * scale) / scale
+
+
+def retry_on_error(func):
+    def wrap(*args, **kwds):
+        for i in range(1,4):
+            try:
+                return func(*args, **kwds)
+            except ccxt.base.errors.RequestTimeout as error:
+                time.sleep(i*5*60)
+        raise error
+    return wrap
+
+binance.fetch_ohlcv = retry_on_error(binance.fetch_ohlcv)
+binance.fetch_order_book = retry_on_error(binance.fetch_order_book)
 
 
 class Tee:
