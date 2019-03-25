@@ -80,7 +80,7 @@ candles_per_hour = 12
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = .85 * scale_requirement
+    requirement = 1.5 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
@@ -94,7 +94,8 @@ def get_best_coin(coins, scale_requirement):
         for fit, h in zip(wave_fits, hours): fit.hours = h
 
         non_wave    = lambda fit: abs(fit.candles.velocity) * fit.hours + fit.rmse
-        reduce_wave = lambda fit: max(0, fit.amp * 2 * fit.freq - non_wave(fit)) * math.cos(fit.phase-1.25*math.pi)
+        phase       = lambda fit: math.cos(fit.phase-(1+unmix(fit.hours, 0, 96))*math.pi)
+        reduce_wave = lambda fit: max(0, fit.amp * 2 * fit.freq - non_wave(fit)) * phase(fit)
         waves = [reduce_wave(fit) * 1e2 / coin.price for fit in wave_fits]
         coin.wave = np.average(waves)
         if coin.vol * coin.wave < requirement: continue
@@ -102,7 +103,7 @@ def get_best_coin(coins, scale_requirement):
         coin.ob, _vol = reduce_order_book(coin.symbol)
         if coin.ob < 0: continue
 
-        coin.goodness = coin.vol * coin.wave * coin.ob**2
+        coin.goodness = coin.vol * coin.wave * coin.ob
         if coin.goodness < 0: continue
         good_coins.append(coin)
 
@@ -469,6 +470,7 @@ def retry_on_error(func):
             try:
                 return func(*args, **kwds)
             except ccxt.errors.RequestTimeout as error:
+                print(error.__class__.__name__)
                 time.sleep(i*5*60)
         raise error
     return wrap
