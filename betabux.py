@@ -468,13 +468,14 @@ def retry_on_error(func):
         for i in range(1,4):
             try:
                 return func(*args, **kwds)
-            except ccxt.base.errors.RequestTimeout as error:
+            except ccxt.errors.RequestTimeout as error:
                 time.sleep(i*5*60)
         raise error
     return wrap
 
 binance.fetch_ohlcv = retry_on_error(binance.fetch_ohlcv)
 binance.fetch_order_book = retry_on_error(binance.fetch_order_book)
+binance.fetch_tickers = retry_on_error(binance.fetch_tickers)
 
 
 class Tee:
