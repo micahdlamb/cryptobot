@@ -141,7 +141,7 @@ def hold_till_crest(coin):
     start_price = binance.fetch_ticker(coin.symbol)['last']
     cell = lambda s, c=6: str(s).ljust(c)
     ob_plot = [],[]
-    print(cell('ob'), cell('gain'))
+    print(cell('bound'), cell('ob'), cell('gain'))
     bound = .06
     while True:
         price = binance.fetch_ticker(coin.symbol)['last']
@@ -150,7 +150,7 @@ def hold_till_crest(coin):
         bound *= .96
         ob_plot[0].append(datetime.datetime.now().timestamp() / 3600)
         ob_plot[1].append(ob)
-        print(cell(round(ob, 2)), cell(percentage(gain)))
+        print(cell(percentage(bound)), cell(round(ob, 2)), cell(percentage(gain)))
 
         if ob < 0:
             try:
