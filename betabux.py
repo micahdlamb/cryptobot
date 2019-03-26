@@ -80,7 +80,7 @@ candles_per_hour = 12
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 1.5 * scale_requirement
+    requirement = 1.85 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
@@ -478,6 +478,7 @@ def retry_on_error(func):
 binance.fetch_ohlcv = retry_on_error(binance.fetch_ohlcv)
 binance.fetch_order_book = retry_on_error(binance.fetch_order_book)
 binance.fetch_tickers = retry_on_error(binance.fetch_tickers)
+binance.fetch_ticker = retry_on_error(binance.fetch_ticker)
 
 
 class Tee:
