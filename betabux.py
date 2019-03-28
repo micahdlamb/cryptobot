@@ -80,7 +80,7 @@ candles_per_hour = 12
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 2 * scale_requirement
+    requirement = 12 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
@@ -90,14 +90,14 @@ def get_best_coin(coins, scale_requirement):
 
         hours = [6, 12, 24, 48]
         candles = Candles(coin.symbol, timeFrame, limit=hours[-1]*candles_per_hour)
-        wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(1, 3)) for h in hours]
+        wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(2, 4)) for h in hours]
         for fit, h in zip(wave_fits, hours): fit.hours = h
 
-        non_wave    = lambda fit: abs(fit.candles.velocity) * fit.hours + fit.rmse*0
+        non_wave    = lambda fit: abs(fit.candles.velocity) * fit.hours + fit.rmse
         phase       = lambda fit: math.cos(fit.phase-(1+unmix(fit.hours, 0, 96))*math.pi)
         reduce_wave = lambda fit: max(0, fit.amp * 2 * fit.freq - non_wave(fit)) * phase(fit)
         waves = [reduce_wave(fit) * 1e2 / coin.price for fit in wave_fits]
-        coin.wave = np.average(waves)
+        coin.wave = sum(waves)
         if coin.vol * coin.wave < requirement: continue
 
         coin.ob, _vol = reduce_order_book(coin.symbol)
