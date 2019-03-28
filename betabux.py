@@ -80,13 +80,12 @@ candles_per_hour = 12
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 12 * scale_requirement
+    requirement = 36 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
         ticker = tickers[coin.symbol]
         coin.price  = ticker['last']
-        coin.vol    = math.log10(ticker['quoteVolume'])
 
         hours = [6, 12, 24, 48]
         candles = Candles(coin.symbol, timeFrame, limit=hours[-1]*candles_per_hour)
@@ -98,18 +97,14 @@ def get_best_coin(coins, scale_requirement):
         reduce_wave = lambda fit: max(0, fit.amp * 2 * fit.freq - non_wave(fit)) * phase(fit)
         waves = [reduce_wave(fit) * 1e2 / coin.price for fit in wave_fits]
         coin.wave = sum(waves)
-        if coin.vol * coin.wave < requirement: continue
+        if coin.wave < 0: continue
 
-        coin.ob, _vol = reduce_order_book(coin.symbol)
+        coin.ob, coin.vol = reduce_order_book(coin.symbol)
         if coin.ob < 0: continue
 
-        coin.goodness = coin.vol * coin.wave * coin.ob
+        coin.goodness = coin.wave * coin.ob * coin.vol
         if coin.goodness < 0: continue
         good_coins.append(coin)
-
-        #def proportions(values):
-        #    total = sum([abs(v) for v in values])
-        #    return [round(v/(total or 1),2) for v in values]
 
         show_candles = 18 * candles_per_hour
         coin.plots["actual"] = *candles[-show_candles:].prices, dict(linestyle='-')
@@ -121,11 +116,9 @@ def get_best_coin(coins, scale_requirement):
     if not good_coins: return None
     good_coins.sort(key=lambda coin: coin.goodness, reverse=True)
     col  = lambda s,c=5: str(s).ljust(c)
-    rcol = lambda n,c=5,r=2: str(round(n, r)).ljust(c)
-    pcol = lambda n: percentage(n).ljust(6)
-    print(col(''), col('good'), col('vol'), col('wave'), col('ob',3))
+    print(col(''), col('good'), col('wave'), col('ob'), col('vol'))
     for coin in good_coins[:5]:
-        print(col(coin.name), rcol(coin.goodness), rcol(coin.vol), rcol(coin.wave), rcol(coin.ob,3,1))
+        print(col(coin.name), col(round(coin.goodness)), col(round(coin.wave,1)), col(round(coin.ob,2)), col(round(coin.vol)))
         #show_plots(coin)
 
     best = good_coins[0]
