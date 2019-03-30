@@ -80,7 +80,7 @@ candles_per_hour = 12
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 36 * scale_requirement
+    requirement = 24 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
@@ -94,7 +94,7 @@ def get_best_coin(coins, scale_requirement):
 
         non_wave    = lambda fit: abs(fit.candles.velocity) * fit.hours + fit.rmse
         phase       = lambda fit: math.cos(fit.phase-(1+unmix(fit.hours, 0, 96))*math.pi)
-        reduce_wave = lambda fit: max(0, fit.amp * 2 * fit.freq - non_wave(fit)) * phase(fit)
+        reduce_wave = lambda fit: max(0, fit.amp * 2 - non_wave(fit)) * fit.freq * phase(fit)
         waves = [reduce_wave(fit) * 1e2 / coin.price for fit in wave_fits]
         coin.wave = sum(waves)
         if coin.wave < 0: continue
@@ -111,7 +111,8 @@ def get_best_coin(coins, scale_requirement):
         for fit, wave in zip(wave_fits, waves):
             times, prices = fit.prices
             label = f"wave {fit.hours} ({round(wave, 2)})"
-            coin.plots[label] = times[-show_candles:], prices[-show_candles:], dict(linestyle='--')
+            linestyle = '--' if abs(wave) > coin.wave*.1 else ':'
+            coin.plots[label] = times[-show_candles:], prices[-show_candles:], dict(linestyle=linestyle)
 
     if not good_coins: return None
     good_coins.sort(key=lambda coin: coin.goodness, reverse=True)
@@ -154,7 +155,7 @@ def hold_till_crest(coin):
         else:
             time.sleep(5*60)
 
-    candles = Candles(coin.symbol, '4h', limit=2)
+    candles = Candles(coin.symbol, '1h', limit=math.ceil(len(ob_plot[0])/12))
     cmin, cmax = candles.min, candles.max
     scale_ob = lambda ob: mix(cmax, cmax + cmax-cmin, ob)
     coin.plots['ob'] = ob_plot[0], [scale_ob(ob) for ob in ob_plot[1]], dict(linestyle='-')
