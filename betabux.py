@@ -80,7 +80,7 @@ candles_per_hour = 12
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 24 * scale_requirement
+    requirement = 6 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
@@ -102,7 +102,7 @@ def get_best_coin(coins, scale_requirement):
         coin.ob, coin.vol = reduce_order_book(coin.symbol)
         if coin.ob < 0: continue
 
-        coin.goodness = coin.wave * coin.ob * coin.vol
+        coin.goodness = coin.wave * coin.ob * coin.vol**.5
         if coin.goodness < 0: continue
         good_coins.append(coin)
 
