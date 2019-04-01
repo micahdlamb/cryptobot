@@ -92,9 +92,9 @@ def get_best_coin(coins, scale_requirement):
         wave_fits = [candles[-h * candles_per_hour:].wavefit(slice(2, 4)) for h in hours]
         for fit, h in zip(wave_fits, hours): fit.hours = h
 
-        non_wave    = lambda fit: abs(min(0,fit.candles.velocity)) * fit.hours + fit.rmse
+        non_wave    = lambda fit: abs(min(0,fit.candles.velocity)) * fit.hours + fit.rmse * fit.freq
         phase       = lambda fit: math.cos(fit.phase-(1+unmix(fit.hours, 0, 96))*math.pi)
-        reduce_wave = lambda fit: max(0, fit.amp * 2 - non_wave(fit)) * fit.freq * phase(fit)
+        reduce_wave = lambda fit: max(0, fit.amp * 2 * fit.freq - non_wave(fit)) * phase(fit)
         waves = [reduce_wave(fit) * 1e2 / coin.price for fit in wave_fits]
         coin.wave = sum(waves)
         if coin.wave < 0: continue
@@ -144,7 +144,7 @@ def hold_till_crest(coin):
         ob_plot[0].append(datetime.datetime.now().timestamp() / 3600)
         ob_plot[1].append(ob)
         print(cell(percentage(bound)), cell(round(ob, 2)), cell(percentage(gain)))
-        bound *= .96
+        bound = max(.01, bound - .05 / (12*8))
 
         if ob < 0:
             try:
@@ -384,7 +384,7 @@ class Candles(list):
         return super().__getitem__(item)
 
 
-def reduce_order_book(symbol, bound=.06, pow=2, vol_pow=.5, limit=500):
+def reduce_order_book(symbol, bound=.06, pow=2, dampen_vol=.5, limit=500):
     """Reduces order book to value between -1 -> 1.
        -1 means all orders are asks, 1 means all orders are bids.  Presumably -1 is bad and 1 is good.
        Volumes are weighted less the farther they are from the current price.
@@ -395,10 +395,10 @@ def reduce_order_book(symbol, bound=.06, pow=2, vol_pow=.5, limit=500):
         print(f"WARNING {symbol} ask range {round(ask_range, 3)} < {bound}. Increase limit")
     ask_price = book['asks'][0][0]
     ask_bound = ask_price * (1+bound)
-    ask_volume = sum(max(0, unmix(price, ask_bound, ask_price))**pow * (volume * price)**vol_pow for price, volume in book['asks'])
+    ask_volume = sum(max(0, unmix(price, ask_bound, ask_price))**pow * (volume * price)**dampen_vol for price, volume in book['asks'])
     bid_price = book['bids'][0][0]
     bid_bound = bid_price * (1-bound)
-    bid_volume = sum(max(0, unmix(price, bid_bound, bid_price))**pow * (volume * price)**vol_pow for price, volume in book['bids'])
+    bid_volume = sum(max(0, unmix(price, bid_bound, bid_price))**pow * (volume * price)**dampen_vol for price, volume in book['bids'])
     volume = bid_volume + ask_volume
     return (bid_volume / volume) * 2 - 1, volume
 
