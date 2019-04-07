@@ -80,7 +80,7 @@ candles_per_hour = 12
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 65 * scale_requirement
+    requirement = 48 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
@@ -118,7 +118,7 @@ def get_best_coin(coins, scale_requirement):
     col  = lambda s,c=5: str(s).ljust(c)
     print(col(''), col('good'), col('wave'), col('ob'), col('vol'))
     for coin in good_coins[:5]:
-        print(col(coin.name), col(round(coin.goodness,1)), col(round(coin.wave,1)), col(round(coin.ob,2)), col(round(coin.vol)))
+        print(col(coin.name), col(round(coin.goodness,1)), col(round(coin.wave,1)), col(round(coin.ob,2)), col(round(coin.ob * coin.vol)))
         #show_plots(coin)
 
     best = good_coins[0]
@@ -143,7 +143,7 @@ def hold_till_crest(coin):
         ob_plot[0].append(datetime.datetime.now().timestamp() / 3600)
         ob_plot[1].append(ob)
         print(cell(percentage(bound)), cell(round(ob, 2)), cell(percentage(gain)))
-        bound = max(.01, bound - .05 / (12*8))
+        bound = max(.01, bound - .05 / (12*6))
 
         if ob < 0:
             try:
