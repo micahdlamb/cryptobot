@@ -103,9 +103,13 @@ def get_best_coin(coins, scale_requirement):
 
         waves, candles, fits = reduce_waves(coin.symbol)
         coin.wave = sum(waves)
-        if coin.wave < 0: continue
+        if coin.vol * coin.wave < requirement: continue
 
-        coin.goodness = coin.vol * coin.wave
+        coin.ob, _vol = reduce_order_book(coin.symbol)
+        if coin.ob < 0: continue
+
+        coin.goodness = coin.vol * coin.wave * coin.ob
+        if coin.goodness < 0: continue
         good_coins.append(coin)
 
         show_candles = 18 * candles_per_hour
@@ -119,9 +123,9 @@ def get_best_coin(coins, scale_requirement):
     if not good_coins: return None
     good_coins.sort(key=lambda coin: coin.goodness, reverse=True)
     col  = lambda s,c=5: str(s).ljust(c)
-    print(col(''), col('good'), col('vol'), col('wave'))
+    print(col(''), col('good'), col('vol'), col('wave'), col('ob'))
     for coin in good_coins[:5]:
-        print(col(coin.name), col(round(coin.goodness,1)), col(round(coin.vol, 2)), col(round(coin.wave,1)))
+        print(col(coin.name), col(round(coin.goodness,1)), col(round(coin.vol, 2)), col(round(coin.wave,1)), col(round(coin.ob,1)))
         #show_plots(coin)
 
     best = good_coins[0]
