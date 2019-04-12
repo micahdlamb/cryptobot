@@ -75,31 +75,15 @@ def main():
         print('-'*30 + '\n')
 
 
-timeFrame = '5m'
-candles_per_hour = 12
-
-
-def reduce_waves(symbol):
-    hours = [6, 12, 24, 48]
-    candles = Candles(symbol, timeFrame, limit=hours[-1] * candles_per_hour)
-    fits = [candles[-h * candles_per_hour:].wavefit(slice(2, 4)) for h in hours]
-    for fit, h in zip(fits, hours): fit.hours = h
-
-    phase = lambda fit: math.cos(fit.phase - (1 + unmix(fit.hours, 0, 96)) * math.pi)
-    reduce_wave = lambda fit: max(0, fit.amp * 2 - fit.rmse) * fit.freq * phase(fit) / fit.hours
-    waves = [reduce_wave(fit) * 1e4 / candles.end_price for fit in fits]
-    return waves, candles, fits
-
-
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 100 * scale_requirement
+    requirement = 5 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
         ticker = tickers[coin.symbol]
-        coin.price  = ticker['last']
-        coin.vol    = math.log10(ticker['quoteVolume'])
+        coin.price = ticker['last']
+        coin.vol   = math.log10(ticker['quoteVolume'])
 
         waves, candles, fits = reduce_waves(coin.symbol)
         coin.wave = sum(waves)
@@ -112,7 +96,7 @@ def get_best_coin(coins, scale_requirement):
         if coin.goodness < 0: continue
         good_coins.append(coin)
 
-        show_candles = 18 * candles_per_hour
+        show_candles = 18 * candles.candles_per_hour
         coin.plots["actual"] = *candles[-show_candles:].prices, dict(linestyle='-')
         for fit, wave in zip(fits, waves):
             times, prices = fit.prices
@@ -139,17 +123,21 @@ def get_best_coin(coins, scale_requirement):
 def hold_till_crest(coin):
     print(f"====== Holding {coin.name} ======")
     start_price = binance.fetch_ticker(coin.symbol)['last']
-    cell = lambda s, c=6: str(s).ljust(c)
-    rnd  = lambda n: str(int(round(n)))
-    print(cell('wave', 24), cell('gain'))
+    col = lambda s, c=6: str(s).ljust(c)
+    rnd = lambda n: str(int(round(n)))
+    ob_plot = [], []
+    print(col('wave', 24), col('ob'), col('gain'))
     while True:
         price = binance.fetch_ticker(coin.symbol)['last']
         gain = (price - start_price) / start_price
         waves, candles, wave_fits = reduce_waves(coin.symbol)
         wave = sum(waves)
-        print(cell(f"[{', '.join(rnd(w) for w in waves)}] => {rnd(wave)}", 24), cell(percentage(gain)))
+        ob, _vol = reduce_order_book(coin.symbol)
+        ob_plot[0].append(datetime.datetime.now().timestamp() / 3600)
+        ob_plot[1].append(ob)
+        print(col(f"[{', '.join(rnd(w) for w in waves)}] => {rnd(wave)}", 24), col(round(ob,1)), col(percentage(gain)))
 
-        if wave < 0:
+        if wave < 0 or ob < 0:
             try:
                 trade_coin(coin.name, 'BTC')
                 break
@@ -380,6 +368,20 @@ class Candles(list):
             items.__dict__.update(self.__dict__)
             return items
         return super().__getitem__(item)
+
+
+def reduce_waves(symbol, hours=[6, 12, 24, 48], timeFrame='5m'):
+    candles_per_hour = {'5m': 12}[timeFrame]
+    candles = Candles(symbol, timeFrame, limit=hours[-1] * candles_per_hour)
+    candles.candles_per_hour = candles_per_hour
+    fits = [candles[-h * candles_per_hour:].wavefit(slice(1, 4)) for h in hours]
+    for fit, h in zip(fits, hours): fit.hours = h
+
+    non_wave = lambda fit: abs(min(0, fit.candles.velocity)) * fit.hours + fit.rmse
+    phase = lambda fit: math.cos(fit.phase - (1 + unmix(fit.hours, 0, 96)) * math.pi)
+    reduce_wave = lambda fit: max(0, fit.amp * 2 - non_wave(fit)) * fit.freq * phase(fit) / fit.hours**.5
+    waves = [reduce_wave(fit) * 1e4 / candles.end_price for fit in fits]
+    return waves, candles, fits
 
 
 def reduce_order_book(symbol, bound=.06, pow=2, limit=500):
