@@ -77,7 +77,7 @@ def main():
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 5 * scale_requirement
+    requirement = 48 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
