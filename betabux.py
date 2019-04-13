@@ -125,19 +125,20 @@ def hold_till_crest(coin):
     start_price = binance.fetch_ticker(coin.symbol)['last']
     col = lambda s, c=6: str(s).ljust(c)
     rnd = lambda n: str(int(round(n)))
-    ob_plot = [], []
-    print(col('wave', 24), col('ob'), col('gain'))
+    times = []
+    obs = []
+    print(col('wave', 26), col('ob'), col('gain'))
     while True:
         price = binance.fetch_ticker(coin.symbol)['last']
         gain = (price - start_price) / start_price
-        waves, candles, wave_fits = reduce_waves(coin.symbol)
+        waves, candles, fits = reduce_waves(coin.symbol)
         wave = sum(waves)
         ob, _vol = reduce_order_book(coin.symbol)
-        ob_plot[0].append(datetime.datetime.now().timestamp() / 3600)
-        ob_plot[1].append(ob)
+        times.append(datetime.datetime.now().timestamp() / 3600)
+        obs.append(ob)
         print(col(f"[{', '.join(rnd(w) for w in waves)}] => {rnd(wave)}", 24), col(round(ob,1)), col(percentage(gain)))
 
-        if wave < 0 or ob < 0:
+        if ob < 0 or (wave < 0 and ob < np.average(obs)):
             try:
                 trade_coin(coin.name, 'BTC')
                 break
@@ -145,6 +146,19 @@ def hold_till_crest(coin):
                 print(err)
         else:
             time.sleep(5*60)
+
+    show_candles = len(times)
+    for fit, wave in zip(fits, waves):
+        _times, prices = fit.prices
+        label = f"sell wave {fit.hours} ({round(wave, 2)})"
+        linestyle = '--' if abs(wave) > coin.wave*.1 else ':'
+        coin.plots[label] = _times[-show_candles:], prices[-show_candles:], dict(linestyle=linestyle)
+
+    candles = Candles(coin.symbol, '1h', limit=math.ceil(len(times)/12))
+    cmin, cmax = candles.min, candles.max
+    scale_ob = lambda ob: mix(cmax, cmax + cmax-cmin, ob)
+    coin.plots['ob'] = times, [scale_ob(ob) for ob in obs], dict(linestyle='-')
+    #show_plots(coin)
 
 
 trade_log = []
