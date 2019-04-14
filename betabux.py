@@ -101,7 +101,7 @@ def get_best_coin(coins, scale_requirement):
 
         show_candles = 18 * candles.candles_per_hour
         coin.plots["actual"] = *candles[-show_candles:].prices, dict(linestyle='-')
-        for fit, wave, color in zip(fits, waves, color):
+        for fit, wave, color in zip(fits, waves, colors):
             times, prices = fit.prices
             label = f"wave {fit.hours} ({round(wave, 2)})"
             linestyle = '--' if abs(wave) > coin.wave*.1 else ':'
