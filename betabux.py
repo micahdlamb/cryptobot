@@ -75,6 +75,9 @@ def main():
         print('-'*30 + '\n')
 
 
+colors = ['orange', 'green', 'red', 'purple']
+
+
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
     requirement = 48 * scale_requirement
@@ -98,11 +101,11 @@ def get_best_coin(coins, scale_requirement):
 
         show_candles = 18 * candles.candles_per_hour
         coin.plots["actual"] = *candles[-show_candles:].prices, dict(linestyle='-')
-        for fit, wave in zip(fits, waves):
+        for fit, wave, color in zip(fits, waves, color):
             times, prices = fit.prices
             label = f"wave {fit.hours} ({round(wave, 2)})"
             linestyle = '--' if abs(wave) > coin.wave*.1 else ':'
-            coin.plots[label] = times[-show_candles:], prices[-show_candles:], dict(linestyle=linestyle)
+            coin.plots[label] = times[-show_candles:], prices[-show_candles:], dict(linestyle=linestyle, color=color)
 
     if not good_coins: return None
     good_coins.sort(key=lambda coin: coin.goodness, reverse=True)
@@ -148,11 +151,11 @@ def hold_till_crest(coin):
             time.sleep(5*60)
 
     show_candles = len(times)
-    for fit, wave in zip(fits, waves):
+    for fit, _wave, color in zip(fits, waves, colors):
         _times, prices = fit.prices
-        label = f"sell wave {fit.hours} ({round(wave, 2)})"
-        linestyle = '--' if abs(wave) > coin.wave*.1 else ':'
-        coin.plots[label] = _times[-show_candles:], prices[-show_candles:], dict(linestyle=linestyle)
+        label = f"sell wave {fit.hours} ({round(_wave, 2)})"
+        linestyle = '--' if abs(_wave) > wave*.1 else ':'
+        coin.plots[label] = _times[-show_candles:], prices[-show_candles:], dict(linestyle=linestyle, color=color)
 
     candles = Candles(coin.symbol, '1h', limit=math.ceil(len(times)/12))
     cmin, cmax = candles.min, candles.max
