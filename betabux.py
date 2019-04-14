@@ -139,7 +139,7 @@ def hold_till_crest(coin):
         ob, _vol = reduce_order_book(coin.symbol)
         times.append(datetime.datetime.now().timestamp() / 3600)
         obs.append(ob)
-        print(col(f"[{', '.join(rnd(w) for w in waves)}] => {rnd(wave)}", 24), col(round(ob,1)), col(percentage(gain)))
+        print(col(f"[{', '.join(rnd(w) for w in waves)}] => {rnd(wave)}", 26), col(round(ob,1)), col(percentage(gain)))
 
         if ob < 0 or (wave < 0 and ob < np.average(obs)):
             try:
