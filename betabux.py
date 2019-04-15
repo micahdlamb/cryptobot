@@ -103,7 +103,7 @@ def get_best_coin(coins, scale_requirement):
         coin.plots["actual"] = *candles[-show_candles:].prices, dict(linestyle='-')
         for fit, wave, color in zip(fits, waves, colors):
             times, prices = fit.prices
-            label = f"wave {fit.hours} ({round(wave, 2)})"
+            label = f"buy wave {fit.hours} ({round(wave, 2)})"
             linestyle = '--' if abs(wave) > coin.wave*.1 else ':'
             coin.plots[label] = times[-show_candles:], prices[-show_candles:], dict(linestyle=linestyle, color=color)
 
@@ -160,7 +160,7 @@ def hold_till_crest(coin):
     candles = Candles(coin.symbol, '1h', limit=math.ceil(len(times)/12))
     cmin, cmax = candles.min, candles.max
     scale_ob = lambda ob: mix(cmax, cmax + cmax-cmin, ob)
-    coin.plots['ob'] = times, [scale_ob(ob) for ob in obs], dict(linestyle='-')
+    coin.plots['ob'] = times, [scale_ob(ob) for ob in obs], dict(linestyle='-', color='black')
     #show_plots(coin)
 
 
@@ -387,7 +387,7 @@ class Candles(list):
         return super().__getitem__(item)
 
 
-def reduce_waves(symbol, hours=[6, 12, 24, 48], timeFrame='5m'):
+def reduce_waves(symbol, hours=[8, 16, 24, 32], timeFrame='5m'):
     candles_per_hour = {'5m': 12}[timeFrame]
     candles = Candles(symbol, timeFrame, limit=hours[-1] * candles_per_hour)
     candles.candles_per_hour = candles_per_hour
@@ -395,7 +395,7 @@ def reduce_waves(symbol, hours=[6, 12, 24, 48], timeFrame='5m'):
     for fit, h in zip(fits, hours): fit.hours = h
 
     non_wave = lambda fit: abs(min(0, fit.candles.velocity)) * fit.hours + fit.rmse
-    phase = lambda fit: math.cos(fit.phase - (1 + unmix(fit.hours, 0, 96)) * math.pi)
+    phase = lambda fit: math.cos(fit.phase - (1 + unmix(fit.hours, 0, 80)) * math.pi)
     reduce_wave = lambda fit: max(0, fit.amp * 2 - non_wave(fit)) * fit.freq * phase(fit) / fit.hours**.5
     waves = [reduce_wave(fit) * 1e4 / candles.end_price for fit in fits]
     return waves, candles, fits
