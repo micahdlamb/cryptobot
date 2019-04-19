@@ -15,6 +15,7 @@ binance = ccxt.binance({
     'secret': os.environ['binance_secret']
 })
 
+test = platform.system() == 'Windows'
 
 def main():
     start_balance = get_balance()
@@ -35,7 +36,7 @@ def main():
                 class Coin(collections.namedtuple("Coin", "name symbol plots")): pass
                 holding = get_holding_coin()
 
-                if holding.name == 'BTC':
+                if test or holding.name == 'BTC':
                     scale_requirement = 1
                     while True:
                         coins = [Coin(symbol.split('/')[0], symbol, {}) for symbol in symbols]
@@ -80,40 +81,39 @@ colors = ['orange', 'green', 'red', 'purple']
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 48 * scale_requirement
+    requirement = 150 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
         ticker = tickers[coin.symbol]
         coin.price = ticker['last']
-        coin.vol   = math.log10(ticker['quoteVolume'])
 
         waves, candles, fits = reduce_waves(coin.symbol)
         coin.wave = sum(waves)
-        if coin.vol * coin.wave < requirement: continue
+        if coin.wave < 0: continue
 
-        coin.ob, _vol = reduce_order_book(coin.symbol)
+        coin.ob, coin.vol = reduce_order_book(coin.symbol)
         if coin.ob < 0: continue
 
-        coin.goodness = coin.vol * coin.wave * coin.ob
+        coin.goodness = coin.wave * coin.ob * coin.vol**.5
         if coin.goodness < 0: continue
         good_coins.append(coin)
 
-        show_candles = 18 * candles.candles_per_hour
+        show_candles = 24 * candles.candles_per_hour
         coin.plots["actual"] = *candles[-show_candles:].prices, dict(linestyle='-')
         for fit, wave, color in zip(fits, waves, colors):
             times, prices = fit.prices
-            label = f"buy wave {fit.hours} ({round(wave, 2)})"
+            label = f"buy {fit.hours} ({round(wave, 2)})"
             linestyle = '--' if abs(wave) > coin.wave*.1 else ':'
             coin.plots[label] = times[-show_candles:], prices[-show_candles:], dict(linestyle=linestyle, color=color)
 
     if not good_coins: return None
     good_coins.sort(key=lambda coin: coin.goodness, reverse=True)
     col  = lambda s,c=5: str(s).ljust(c)
-    print(col(''), col('good'), col('vol'), col('wave'), col('ob'))
+    print(col(''), col('good'), col('wave'), col('ob'), col('vol'))
     for coin in good_coins[:5]:
-        print(col(coin.name), col(round(coin.goodness,1)), col(round(coin.vol, 2)), col(round(coin.wave,1)), col(round(coin.ob,1)))
-        #show_plots(coin)
+        print(col(coin.name), col(round(coin.goodness)), col(round(coin.wave)), col(round(coin.ob,1)), col(round(coin.ob * coin.vol)))
+        test and show_plots(coin)
 
     best = good_coins[0]
     if best.goodness < requirement:
@@ -394,14 +394,14 @@ def reduce_waves(symbol, hours=[8, 16, 24, 32], timeFrame='5m'):
     fits = [candles[-h * candles_per_hour:].wavefit(slice(1, 4)) for h in hours]
     for fit, h in zip(fits, hours): fit.hours = h
 
-    non_wave = lambda fit: abs(min(0, fit.candles.velocity)) * fit.hours + fit.rmse
-    phase = lambda fit: math.cos(fit.phase - (1 + unmix(fit.hours, 0, 80)) * math.pi)
+    non_wave = lambda fit: (abs(min(0, fit.candles.velocity)) * fit.hours + fit.rmse) / 2
+    phase = lambda fit: math.cos(fit.phase - (1 + unmix(fit.hours, 0, hours[-1]*2)) * math.pi)
     reduce_wave = lambda fit: max(0, fit.amp * 2 - non_wave(fit)) * fit.freq * phase(fit) / fit.hours**.5
     waves = [reduce_wave(fit) * 1e4 / candles.end_price for fit in fits]
     return waves, candles, fits
 
 
-def reduce_order_book(symbol, bound=.06, pow=2, limit=500):
+def reduce_order_book(symbol, bound=.04, pow=2, limit=500):
     """Reduces order book to value between -1 -> 1.
        -1 means all orders are asks, 1 means all orders are bids.  Presumably -1 is bad and 1 is good.
        Volumes are weighted less the farther they are from the current price.
@@ -458,7 +458,7 @@ def get_holding_coin():
 
 
 @contextlib.contextmanager
-def record_plot(coin, plot_name, style=dict(linestyle='-')):
+def record_plot(coin, plot_name, style=dict(linestyle='-', color='brown')):
     start_time = time.time()
     yield
     elapsed_time = time.time() - start_time
