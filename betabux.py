@@ -81,7 +81,7 @@ colors = ['orange', 'green', 'red', 'purple']
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 150 * scale_requirement
+    requirement = 135 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
@@ -103,7 +103,7 @@ def get_best_coin(coins, scale_requirement):
         coin.plots["actual"] = *candles[-show_candles:].prices, dict(linestyle='-')
         for fit, wave, color in zip(fits, waves, colors):
             times, prices = fit.prices
-            label = f"buy {fit.hours} ({round(wave, 2)})"
+            label = f"b {fit.hours} ({round(wave)})"
             linestyle = '--' if abs(wave) > coin.wave*.1 else ':'
             coin.plots[label] = times[-show_candles:], prices[-show_candles:], dict(linestyle=linestyle, color=color)
 
@@ -153,7 +153,7 @@ def hold_till_crest(coin):
     show_candles = len(times)
     for fit, _wave, color in zip(fits, waves, colors):
         _times, prices = fit.prices
-        label = f"sell wave {fit.hours} ({round(_wave, 2)})"
+        label = f"s {fit.hours} ({round(_wave)})"
         linestyle = '--' if abs(_wave) > wave*.1 else ':'
         coin.plots[label] = _times[-show_candles:], prices[-show_candles:], dict(linestyle=linestyle, color=color)
 
