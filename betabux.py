@@ -81,7 +81,7 @@ colors = ['orange', 'green', 'red', 'purple']
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 135 * scale_requirement
+    requirement = 30 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
@@ -141,7 +141,7 @@ def hold_till_crest(coin):
         obs.append(ob)
         print(col(f"[{', '.join(rnd(w) for w in waves)}] => {rnd(wave)}", 26), col(round(ob,1)), col(percentage(gain)))
 
-        if ob < 0 or (wave < 0 and ob < np.average(obs)):
+        if all(ob < 0 for ob in obs[-3:]) or (wave < 0 and ob < np.average(obs)):
             try:
                 trade_coin(coin.name, 'BTC')
                 break
@@ -391,7 +391,7 @@ def reduce_waves(symbol, hours=[8, 16, 24, 32], timeFrame='5m'):
     candles_per_hour = {'5m': 12}[timeFrame]
     candles = Candles(symbol, timeFrame, limit=hours[-1] * candles_per_hour)
     candles.candles_per_hour = candles_per_hour
-    fits = [candles[-h * candles_per_hour:].wavefit(slice(1, 4)) for h in hours]
+    fits = [candles[-h * candles_per_hour:].wavefit(slice(2, 4)) for h in hours]
     for fit, h in zip(fits, hours): fit.hours = h
 
     non_wave = lambda fit: (abs(min(0, fit.candles.velocity)) * fit.hours + fit.rmse) / 2
