@@ -129,6 +129,7 @@ def hold_till_crest(coin):
     col = lambda s, c=6: str(s).ljust(c)
     rnd = lambda n: str(int(round(n)))
     times = []
+    prices = []
     obs = []
     print(col('wave', 26), col('ob'), col('gain'))
     while True:
@@ -138,10 +139,12 @@ def hold_till_crest(coin):
         wave = sum(waves)
         ob, _vol = reduce_order_book(coin.symbol)
         times.append(datetime.datetime.now().timestamp() / 3600)
+        prices.append(price)
         obs.append(ob)
         print(col(f"[{', '.join(rnd(w) for w in waves)}] => {rnd(wave)}", 26), col(round(ob,1)), col(percentage(gain)))
 
-        if all(ob < 0 for ob in obs[-3:]) or (wave < 0 and ob < np.average(obs)):
+        # ob seems to spike down when price is at a minimum or maximum
+        if (ob < 0 and price > np.average(prices[-3:])) or (wave < 0 and ob < np.average(obs[-3])):
             try:
                 trade_coin(coin.name, 'BTC')
                 break
