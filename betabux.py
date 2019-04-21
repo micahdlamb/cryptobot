@@ -144,7 +144,7 @@ def hold_till_crest(coin):
         print(col(f"[{', '.join(rnd(w) for w in waves)}] => {rnd(wave)}", 26), col(round(ob,1)), col(percentage(gain)))
 
         # ob seems to spike down when price is at a minimum or maximum
-        if (ob < 0 and price > np.average(prices[-3:])) or (wave < 0 and ob < np.average(obs[-3:])):
+        if (ob < np.average(obs)/4 and price > np.average(prices[-3:])) or (wave < 0 and ob < np.average(obs[-3:])):
             try:
                 trade_coin(coin.name, 'BTC')
                 break
