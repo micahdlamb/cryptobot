@@ -28,7 +28,7 @@ def main():
                            and market['quote'] == 'BTC'
                            and symbol != 'BNB/BTC' # BNB used for fees
                            and 10 ** -market['precision']['price'] / tickers[symbol]['last'] < .001
-                           and tickers[symbol]['quoteVolume'] > 50]
+                           and tickers[symbol]['quoteVolume'] > 100]
 
                 market_delta = np.average([tickers[symbol]['percentage'] for symbol in symbols])
                 print(f"24 hour alt coin change: {market_delta}% ({len(symbols)} coins)")
@@ -81,12 +81,15 @@ colors = ['orange', 'green', 'red', 'purple']
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 30 * scale_requirement
+    requirement = 64 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
         ticker = tickers[coin.symbol]
         coin.price = ticker['last']
+
+        coin.drop = -Candles(coin.symbol, '5m', 3).delta * 100 / coin.price
+        if coin.drop < 0: continue
 
         waves, candles, fits = reduce_waves(coin.symbol)
         coin.wave = sum(waves)
@@ -95,7 +98,7 @@ def get_best_coin(coins, scale_requirement):
         coin.ob, coin.vol = reduce_order_book(coin.symbol)
         if coin.ob < 0: continue
 
-        coin.goodness = coin.wave * coin.ob * coin.vol**.5
+        coin.goodness = coin.drop * coin.wave * coin.ob * coin.vol**.5
         if coin.goodness < 0: continue
         good_coins.append(coin)
 
@@ -107,12 +110,12 @@ def get_best_coin(coins, scale_requirement):
             linestyle = '--' if abs(wave) > coin.wave*.1 else ':'
             coin.plots[label] = times[-show_candles:], prices[-show_candles:], dict(linestyle=linestyle, color=color)
 
-    if not good_coins: return None
+    if not good_coins: return print('None found')
     good_coins.sort(key=lambda coin: coin.goodness, reverse=True)
     col  = lambda s,c=5: str(s).ljust(c)
-    print(col(''), col('good'), col('wave'), col('ob'), col('vol'))
+    print(col(''), col('good'), col('drop'), col('wave'), col('ob'), col('vol'))
     for coin in good_coins[:5]:
-        print(col(coin.name), col(round(coin.goodness)), col(round(coin.wave)), col(round(coin.ob,1)), col(round(coin.ob * coin.vol)))
+        print(col(coin.name), col(round(coin.goodness)), col(round(coin.drop,1)), col(round(coin.wave)), col(round(coin.ob,1)), col(round(coin.ob * coin.vol)))
         test and show_plots(coin)
 
     best = good_coins[0]
@@ -362,6 +365,10 @@ class Candles(list):
     @property
     def acceleration(self):
         return self.polyfit(2)[0] * 2
+
+    @property
+    def delta(self):
+        return self.end_price * 2 - self.max - self.min
 
     class WaveFit(collections.namedtuple("Wave", "zero freq amp phase rmse")): pass
 
