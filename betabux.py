@@ -81,7 +81,7 @@ colors = ['orange', 'green', 'red', 'purple']
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 64 * scale_requirement
+    requirement = 300 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
@@ -98,7 +98,7 @@ def get_best_coin(coins, scale_requirement):
         coin.ob, coin.vol = reduce_order_book(coin.symbol)
         if coin.ob < 0: continue
 
-        coin.goodness = coin.drop * coin.wave * coin.ob * coin.vol**.5
+        coin.goodness = coin.drop * coin.wave * coin.ob * coin.vol
         if coin.goodness < 0: continue
         good_coins.append(coin)
 
@@ -147,7 +147,8 @@ def hold_till_crest(coin):
         print(col(f"[{', '.join(rnd(w) for w in waves)}] => {rnd(wave)}", 26), col(round(ob,1)), col(percentage(gain)))
 
         # ob seems to spike down when price is at a minimum or maximum
-        if (ob < np.average(obs)/4 and price > np.average(prices[-3:])) or (wave < 0 and ob < np.average(obs[-3:])):
+        #  and price > np.average(prices[-3:])
+        if (ob < np.average(obs)/4) or (wave < 0 and ob < np.average(obs[-3:])):
             try:
                 trade_coin(coin.name, 'BTC')
                 break
