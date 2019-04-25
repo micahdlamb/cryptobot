@@ -88,7 +88,7 @@ def get_best_coin(coins, scale_requirement):
         ticker = tickers[coin.symbol]
         coin.price = ticker['last']
 
-        coin.drop = -Candles(coin.symbol, '5m', 3).delta * 100 / coin.price
+        coin.drop = -Candles(coin.symbol, '5m', 6).delta * 100 / coin.price
         if coin.drop < 0: continue
 
         waves, candles, fits = reduce_waves(coin.symbol)
@@ -148,7 +148,7 @@ def hold_till_crest(coin):
 
         # ob seems to spike down when price is at a minimum or maximum
         #  and price > np.average(prices[-3:])
-        if (ob < np.average(obs)/4) or (wave < 0 and ob < np.average(obs[-3:])):
+        if (ob < np.average(obs)/2) or (wave < 0 and ob < np.average(obs[-3:])):
             try:
                 trade_coin(coin.name, 'BTC')
                 break
@@ -412,7 +412,7 @@ def reduce_waves(symbol, hours=[8, 16, 24, 32], timeFrame='5m'):
     return waves, candles, fits
 
 
-def reduce_order_book(symbol, bound=.04, pow=2, limit=500):
+def reduce_order_book(symbol, bound=.02, pow=2, limit=100):
     """Reduces order book to value between -1 -> 1.
        -1 means all orders are asks, 1 means all orders are bids.  Presumably -1 is bad and 1 is good.
        Volumes are weighted less the farther they are from the current price.
