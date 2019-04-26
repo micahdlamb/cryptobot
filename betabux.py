@@ -81,19 +81,18 @@ colors = ['orange', 'green', 'red', 'purple']
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 500 * scale_requirement
+    requirement = 250 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
         ticker = tickers[coin.symbol]
         coin.price = ticker['last']
-        coin.vol   = math.log10(ticker['quoteVolume'])
 
         waves, candles, fits = reduce_waves(coin.symbol)
         coin.wave = sum(waves)
         if coin.wave < 0: continue
 
-        coin.goodness = coin.vol * coin.wave
+        coin.goodness = coin.wave
         if coin.goodness < 0: continue
         good_coins.append(coin)
 
@@ -109,9 +108,9 @@ def get_best_coin(coins, scale_requirement):
     good_coins.sort(key=lambda coin: coin.goodness, reverse=True)
     col = lambda s,c=5: str(s).ljust(c)
     rnd = lambda n: str(int(round(n)))
-    print(col(''), col('good'), col('vol'), col('wave'))
+    print(col(''), col('good'), col('wave'))
     for coin in good_coins[:5]:
-        print(col(coin.name), col(rnd(coin.goodness)), col(round(coin.vol, 2)), col(rnd(coin.wave)))
+        print(col(coin.name), col(rnd(coin.goodness)), col(rnd(coin.wave)))
         test and show_plots(coin)
 
     best = good_coins[0]
