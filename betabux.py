@@ -81,7 +81,7 @@ colors = ['orange', 'green', 'red', 'purple']
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 250 * scale_requirement
+    requirement = 150 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
@@ -92,7 +92,10 @@ def get_best_coin(coins, scale_requirement):
         coin.wave = sum(waves)
         if coin.wave < 0: continue
 
-        coin.goodness = coin.wave
+        coin.ob, coin.vol = reduce_order_book(coin.symbol)
+        if coin.ob < 0: continue
+
+        coin.goodness = coin.wave * (coin.ob * coin.vol)**.25
         if coin.goodness < 0: continue
         good_coins.append(coin)
 
@@ -108,9 +111,9 @@ def get_best_coin(coins, scale_requirement):
     good_coins.sort(key=lambda coin: coin.goodness, reverse=True)
     col = lambda s,c=5: str(s).ljust(c)
     rnd = lambda n: str(int(round(n)))
-    print(col(''), col('good'), col('wave'))
+    print(col(''), col('good'), col('wave'), col('ob'), col('vol'))
     for coin in good_coins[:5]:
-        print(col(coin.name), col(rnd(coin.goodness)), col(rnd(coin.wave)))
+        print(col(coin.name), col(rnd(coin.goodness)), col(rnd(coin.wave)), col(round(coin.ob,1)), col(round(coin.ob * coin.vol)))
         test and show_plots(coin)
 
     best = good_coins[0]
@@ -353,6 +356,10 @@ class Candles(list):
     def delta(self):
         return self.end_price * 2 - self.max - self.min
 
+    @property
+    def mix(self):
+        return unmix(self.end_price, self.min, self.max)
+
     class WaveFit(collections.namedtuple("Wave", "zero freq amp phase rmse")): pass
 
     def wavefit(self, freq_slice):
@@ -389,12 +396,14 @@ def reduce_waves(symbol, hours=[8, 16, 24, 32], timeFrame='5m'):
 
     non_wave = lambda fit: (abs(min(0, fit.candles.velocity)) * fit.hours + fit.rmse) / 2
     phase = lambda fit: math.cos(fit.phase - (1 + unmix(fit.hours, 0, hours[-1]*2)) * math.pi)
-    reduce_wave = lambda fit: max(0, fit.amp * 2 - non_wave(fit)) * fit.freq * phase(fit) / fit.hours**.5
+    #m1x = lambda fit: -(fit.candles[-int(len(fit.candles)/fit.freq):].mix * 2 - 1)
+    m1x = lambda fit: -(fit.candles.mix * 2 - 1)
+    reduce_wave = lambda fit: max(0, fit.amp * 2 - non_wave(fit)) * fit.freq * np.average([phase(fit), m1x(fit)]) / fit.hours**.5
     waves = [reduce_wave(fit) * 1e4 / candles.end_price for fit in fits]
     return waves, candles, fits
 
 
-def reduce_order_book(symbol, bound=.06, pow=2, limit=500):
+def reduce_order_book(symbol, bound=.04, pow=2, limit=500):
     """Reduces order book to value between -1 -> 1.
        -1 means all orders are asks, 1 means all orders are bids.  Presumably -1 is bad and 1 is good.
        Volumes are weighted less the farther they are from the current price.
