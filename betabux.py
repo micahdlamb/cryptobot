@@ -81,7 +81,7 @@ colors = ['orange', 'green', 'red', 'purple']
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 100 * scale_requirement
+    requirement = 250 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
@@ -387,7 +387,7 @@ class Candles(list):
         return super().__getitem__(item)
 
 
-def reduce_waves(symbol, hours=[8, 16, 24], timeFrame='5m'):
+def reduce_waves(symbol, hours=[4, 8, 16], timeFrame='5m'):
     candles_per_hour = {'5m': 12}[timeFrame]
     candles = Candles(symbol, timeFrame, limit=hours[-1] * candles_per_hour)
     candles.candles_per_hour = candles_per_hour
@@ -398,7 +398,7 @@ def reduce_waves(symbol, hours=[8, 16, 24], timeFrame='5m'):
     phase = lambda fit: math.cos(fit.phase - (1 + unmix(fit.hours, 0, hours[-1]*2)) * math.pi)
     #m1x = lambda fit: -(fit.candles[-int(len(fit.candles)/fit.freq):].mix * 2 - 1)
     m1x = lambda fit: -(fit.candles.mix * 2 - 1)
-    reduce_wave = lambda fit: max(0, fit.amp * 2 - non_wave(fit)) * fit.freq * np.average([phase(fit), m1x(fit)]) / fit.hours**.5
+    reduce_wave = lambda fit: max(0, fit.amp * 2 - non_wave(fit)) * fit.freq * np.average([phase(fit), m1x(fit)])# / fit.hours**.5
     waves = [reduce_wave(fit) * 1e4 / candles.end_price for fit in fits]
     return waves, candles, fits
 
