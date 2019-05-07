@@ -394,7 +394,7 @@ def reduce_waves(symbol, hours=[2, 4, 8], timeFrame='5m'):
     fits = [candles[-h * candles_per_hour:].wavefit(slice(1, 3)) for h in hours]
     for fit, h in zip(fits, hours): fit.hours = h
 
-    non_wave = lambda fit: (abs(min(0, fit.candles.velocity)) * fit.hours + fit.rmse) / 2
+    non_wave = lambda fit: abs(fit.candles.velocity * fit.hours)
     phase = lambda fit: math.cos(fit.phase - (1 + unmix(fit.hours, 0, hours[-1]*2)) * math.pi)
     #m1x = lambda fit: -(fit.candles[-int(len(fit.candles)/fit.freq):].mix * 2 - 1)
     m1x = lambda fit: -(fit.candles.mix * 2 - 1)
