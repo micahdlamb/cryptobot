@@ -81,7 +81,7 @@ colors = ['orange', 'green', 'red', 'purple']
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 350 * scale_requirement
+    requirement = 300 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
@@ -129,17 +129,22 @@ def hold_till_crest(coin):
     start_price = binance.fetch_ticker(coin.symbol)['last']
     col = lambda s, c=6: str(s).ljust(c)
     rnd = lambda n: str(int(round(n)))
+    times = []
     prices = []
-    print(col('wave', 26), col('gain'))
+    obs = []
+    print(col('wave', 26), col('ob'), col('gain'))
     while True:
         price = binance.fetch_ticker(coin.symbol)['last']
-        prices.append(price)
         gain = (price - start_price) / start_price
         waves, candles, fits = reduce_waves(coin.symbol)
         wave = sum(waves)
-        print(col(f"[{', '.join(rnd(w) for w in waves)}] => {rnd(wave)}", 26), col(percentage(gain)))
+        ob, _vol = reduce_order_book(coin.symbol)
+        times.append(datetime.datetime.now().timestamp() / 3600)
+        prices.append(price)
+        obs.append(ob)
+        print(col(f"[{', '.join(rnd(w) for w in waves)}] => {rnd(wave)}", 26), col(round(ob,1)), col(percentage(gain)))
 
-        if wave < 0:
+        if wave + ob * abs(waves[0]) < 0:
             try:
                 trade_coin(coin.name, 'BTC')
                 break
@@ -148,12 +153,18 @@ def hold_till_crest(coin):
         else:
             time.sleep(5*60)
 
-    show_candles = len(prices)
+    show_candles = len(times)
     for fit, _wave, color in zip(fits, waves, colors):
         _times, prices = fit.prices
         label = f"s {fit.hours} ({round(_wave)})"
         linestyle = '--' if abs(_wave) > wave*.1 else ':'
         coin.plots[label] = _times[-show_candles:], prices[-show_candles:], dict(linestyle=linestyle, color=color)
+
+    candles = Candles(coin.symbol, '1h', limit=math.ceil(len(times)/12))
+    cmin, cmax = candles.min, candles.max
+    scale_ob = lambda ob: mix(cmax, cmax + cmax-cmin, ob)
+    coin.plots['ob'] = times, [scale_ob(ob) for ob in obs], dict(linestyle='-', color='black')
+    #show_plots(coin)
 
 
 trade_log = []
