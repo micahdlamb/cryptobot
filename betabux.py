@@ -89,6 +89,7 @@ def get_best_coin(coins, scale_requirement):
         coin.price = ticker['last']
 
         waves, candles, fits = reduce_waves(coin.symbol)
+        waves = [w * 1e4 for w in waves]
         coin.wave = sum(waves)
         if coin.wave < 0: continue
 
@@ -144,7 +145,7 @@ def hold_till_crest(coin):
         obs.append(ob)
         print(col(f"[{', '.join(rnd(w) for w in waves)}] => {rnd(wave)}", 26), col(round(ob,1)), col(percentage(gain)))
 
-        if wave + ob * abs(waves[0]) < 0:
+        if wave + ob * fits[0].amp / price < 0:
             try:
                 trade_coin(coin.name, 'BTC')
                 break
@@ -410,7 +411,7 @@ def reduce_waves(symbol, hours=[2, 4, 8], timeFrame='5m'):
     #m1x = lambda fit: -(fit.candles[-int(len(fit.candles)/fit.freq):].mix * 2 - 1)
     m1x = lambda fit: -(fit.candles.mix * 2 - 1)
     reduce_wave = lambda fit: max(0, fit.amp * 2 - non_wave(fit)) * fit.freq * np.average([phase(fit), m1x(fit)])# / fit.hours**.5
-    waves = [reduce_wave(fit) * 1e4 / candles.end_price for fit in fits]
+    waves = [reduce_wave(fit) / candles.end_price for fit in fits]
     return waves, candles, fits
 
 
