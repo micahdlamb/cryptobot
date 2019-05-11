@@ -81,7 +81,7 @@ colors = ['orange', 'green', 'red', 'purple']
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 300 * scale_requirement
+    requirement = 100 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
@@ -89,7 +89,7 @@ def get_best_coin(coins, scale_requirement):
         coin.price = ticker['last']
 
         waves, candles, fits = reduce_waves(coin.symbol)
-        waves = [w * 1e4 for w in waves]
+        waves = [w * 1e3 for w in waves]
         coin.wave = sum(waves)
         if coin.wave < 0: continue
 
@@ -133,7 +133,7 @@ def hold_till_crest(coin):
     times = []
     prices = []
     obs = []
-    print(col('wave', 26), col('ob'), col('gain'))
+    print(col('wave', 26), col('ob'), col('ob amp'), col('gain'))
     while True:
         price = binance.fetch_ticker(coin.symbol)['last']
         gain = (price - start_price) / start_price
@@ -143,9 +143,10 @@ def hold_till_crest(coin):
         times.append(datetime.datetime.now().timestamp() / 3600)
         prices.append(price)
         obs.append(ob)
-        print(col(f"[{', '.join(rnd(w) for w in waves)}] => {rnd(wave)}", 26), col(round(ob,1)), col(percentage(gain)))
+        ob_amp = ob * fits[0].amp / price
+        print(col(f"[{', '.join(rnd(w*1e3) for w in waves)}] => {rnd(wave*1e3)}", 26), col(round(ob,1)), col(ob_amp*1e3), col(percentage(gain)))
 
-        if wave + ob * fits[0].amp / price < 0:
+        if wave + ob_amp < 0:
             try:
                 trade_coin(coin.name, 'BTC')
                 break
@@ -406,7 +407,7 @@ def reduce_waves(symbol, hours=[2, 4, 8], timeFrame='5m'):
     fits = [candles[-h * candles_per_hour:].wavefit(slice(1, 3)) for h in hours]
     for fit, h in zip(fits, hours): fit.hours = h
 
-    non_wave = lambda fit: abs(fit.candles.velocity * fit.hours)
+    non_wave = lambda fit: abs(fit.candles.velocity * fit.hours) / 2
     phase = lambda fit: math.cos(fit.phase - (1 + unmix(fit.hours, 0, hours[-1]*2)) * math.pi)
     #m1x = lambda fit: -(fit.candles[-int(len(fit.candles)/fit.freq):].mix * 2 - 1)
     m1x = lambda fit: -(fit.candles.mix * 2 - 1)
