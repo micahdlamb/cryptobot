@@ -81,7 +81,7 @@ colors = ['orange', 'green', 'red', 'purple']
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 100 * scale_requirement
+    requirement = 50 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
@@ -143,7 +143,7 @@ def hold_till_crest(coin):
         times.append(datetime.datetime.now().timestamp() / 3600)
         prices.append(price)
         obs.append(ob)
-        ob_amp = ob * np.average([fit.amp for fit in fits]) / price
+        ob_amp = (ob - np.average([obs])) * np.average([fit.amp for fit in fits]) / price
         print(col(f"[{', '.join(rnd(w*1e3) for w in waves)}] => {rnd(wave*1e3)}", 24), col(round(ob,1)), col(rnd(ob_amp*1e3), 7), col(percentage(gain)))
 
         if wave + ob_amp < 0:
@@ -416,7 +416,7 @@ def reduce_waves(symbol, hours=[2, 4, 8], timeFrame='5m'):
     return waves, candles, fits
 
 
-def reduce_order_book(symbol, bound=.04, pow=2, limit=500):
+def reduce_order_book(symbol, bound=.04, pow=4, limit=500):
     """Reduces order book to value between -1 -> 1.
        -1 means all orders are asks, 1 means all orders are bids.  Presumably -1 is bad and 1 is good.
        Volumes are weighted less the farther they are from the current price.
