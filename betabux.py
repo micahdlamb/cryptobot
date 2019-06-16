@@ -81,7 +81,7 @@ colors = ['orange', 'green', 'red', 'purple']
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 50 * scale_requirement
+    requirement = 100 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
@@ -144,10 +144,10 @@ def hold_till_crest(coin):
         prices.append(price)
         obs.append(ob)
         avg_amp = np.average([fit.amp * 2 * fit.freq for fit in fits]) / price
-        ob_amp = (ob - np.average([obs])) * avg_amp
+        ob_amp = (ob - np.average([obs])) * avg_amp * len(waves)
         print(col(f"[{', '.join(rnd(w*1e3) for w in waves)}] => {rnd(wave*1e3)}", 24), col(round(ob,1)), col(rnd(ob_amp*1e3), 7), col(percentage(gain)))
 
-        if wave + ob_amp + avg_amp / 4 < 0:
+        if wave + ob_amp + avg_amp < 0:
             try:
                 trade_coin(coin.name, 'BTC')
                 break
@@ -386,7 +386,7 @@ class Candles(list):
         # amplitudes * 2 to account for imaginary component
         val = lambda x: np.real(wave * (np.cos(x*freq*2*np.pi/n) + 1j * np.sin(x*freq*2*np.pi/n)))*2
         values = zero + np.array([val(i) for i in range(n)])
-        rmse = np.sqrt(((values - prices)**2).mean())
+        rmse = None#np.sqrt(((values - prices)**2).mean())
         wave_fit = self.WaveFit(zero, freq, abs(wave)*2, np.angle(wave) % (2*np.pi), rmse)
         wave_fit.candles = self
         wave_fit.prices  = (times, values)
@@ -408,7 +408,7 @@ def reduce_waves(symbol, hours=[2, 4, 8], timeFrame='5m'):
     fits = [candles[-h * candles_per_hour:].wavefit(slice(1, 3)) for h in hours]
     for fit, h in zip(fits, hours): fit.hours = h
 
-    non_wave = lambda fit: abs(fit.candles.velocity * fit.hours) / 2
+    non_wave = lambda fit: 0#abs(fit.candles.velocity * fit.hours) / 2
     phase = lambda fit: math.cos(fit.phase - (1 + unmix(fit.hours, 0, hours[-1]*2)) * math.pi)
     #m1x = lambda fit: -(fit.candles[-int(len(fit.candles)/fit.freq):].mix * 2 - 1)
     m1x = lambda fit: -(fit.candles.mix * 2 - 1)
