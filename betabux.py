@@ -147,7 +147,7 @@ def hold_till_crest(coin):
         ob_amp = (ob - np.average([obs])) * avg_amp * len(waves)
         print(col(f"[{', '.join(rnd(w*1e3) for w in waves)}] => {rnd(wave*1e3)}", 24), col(round(ob,1)), col(rnd(ob_amp*1e3), 7), col(percentage(gain)))
 
-        if wave + ob_amp + avg_amp < 0:
+        if wave + ob_amp + avg_amp/4 < 0:
             try:
                 trade_coin(coin.name, 'BTC')
                 break
