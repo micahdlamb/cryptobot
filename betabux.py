@@ -147,7 +147,7 @@ def hold_till_crest(coin):
         ob_amp = (ob - np.average([obs])) * avg_amp * len(waves)
         print(col(f"[{', '.join(rnd(w*1e3) for w in waves)}] => {rnd(wave*1e3)}", 24), col(round(ob,1)), col(rnd(ob_amp*1e3), 7), col(percentage(gain)))
 
-        if wave + ob_amp + avg_amp/4 < 0:
+        if wave + ob_amp < 0:
             try:
                 trade_coin(coin.name, 'BTC')
                 break
@@ -401,7 +401,7 @@ class Candles(list):
         return super().__getitem__(item)
 
 
-def reduce_waves(symbol, hours=[2, 4, 8], timeFrame='5m'):
+def reduce_waves(symbol, hours=[1, 2, 4, 8], timeFrame='5m'):
     candles_per_hour = {'5m': 12}[timeFrame]
     candles = Candles(symbol, timeFrame, limit=hours[-1] * candles_per_hour)
     candles.candles_per_hour = candles_per_hour
