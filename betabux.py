@@ -81,7 +81,7 @@ colors = ['orange', 'green', 'red', 'purple']
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 50 * scale_requirement
+    requirement = 125 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
@@ -401,8 +401,8 @@ class Candles(list):
         return super().__getitem__(item)
 
 
-def reduce_waves(symbol, hours=[2, 4, 8], timeFrame='5m'):
-    candles_per_hour = {'5m': 12}[timeFrame]
+def reduce_waves(symbol, hours=[8, 16, 24], timeFrame='15m'):
+    candles_per_hour = {'5m': 12, '15m': 4}[timeFrame]
     candles = Candles(symbol, timeFrame, limit=hours[-1] * candles_per_hour)
     candles.candles_per_hour = candles_per_hour
     fits = [candles[-h * candles_per_hour:].wavefit(slice(1, 3)) for h in hours]
