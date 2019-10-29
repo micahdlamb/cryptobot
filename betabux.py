@@ -81,7 +81,7 @@ colors = ['orange', 'green', 'red', 'purple']
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 125 * scale_requirement
+    requirement = 100 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
@@ -100,7 +100,7 @@ def get_best_coin(coins, scale_requirement):
         if coin.goodness < 0: continue
         good_coins.append(coin)
 
-        show_candles = 24 * candles.candles_per_hour
+        show_candles = 32 * candles.candles_per_hour
         coin.plots["actual"] = *candles[-show_candles:].prices, dict(linestyle='-')
         for fit, wave, color in zip(fits, waves, colors):
             times, prices = fit.prices
@@ -401,18 +401,18 @@ class Candles(list):
         return super().__getitem__(item)
 
 
-def reduce_waves(symbol, hours=[8, 16, 24], timeFrame='15m'):
+def reduce_waves(symbol, hours=[8, 16, 32], timeFrame='15m'):
     candles_per_hour = {'5m': 12, '15m': 4}[timeFrame]
     candles = Candles(symbol, timeFrame, limit=hours[-1] * candles_per_hour)
     candles.candles_per_hour = candles_per_hour
-    fits = [candles[-h * candles_per_hour:].wavefit(slice(1, 3)) for h in hours]
+    fits = [candles[-h * candles_per_hour:].wavefit(slice(2, 4)) for h in hours]
     for fit, h in zip(fits, hours): fit.hours = h
 
-    non_wave = lambda fit: abs(fit.candles.velocity * fit.hours) / 2
+    non_wave = lambda fit: (abs(fit.candles.velocity * fit.hours) + fit.rmse) / 2
     phase = lambda fit: math.cos(fit.phase - (1 + unmix(fit.hours, 0, hours[-1]*2)) * math.pi)
     #m1x = lambda fit: -(fit.candles[-int(len(fit.candles)/fit.freq):].mix * 2 - 1)
     m1x = lambda fit: -(fit.candles.mix * 2 - 1)
-    reduce_wave = lambda fit: max(0, fit.amp * 2 - non_wave(fit)) * fit.freq * np.average([phase(fit), m1x(fit)])# / fit.hours**.5
+    reduce_wave = lambda fit: max(0, fit.amp * 2 - non_wave(fit)) * fit.freq * np.average([phase(fit), m1x(fit)]) * fit.hours**.5
     waves = [reduce_wave(fit) / candles.end_price for fit in fits]
     return waves, candles, fits
 
