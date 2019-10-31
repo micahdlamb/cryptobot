@@ -81,7 +81,7 @@ colors = ['orange', 'green', 'red', 'purple']
 
 def get_best_coin(coins, scale_requirement):
     print('Looking for best coin...')
-    requirement = 150 * scale_requirement
+    requirement = 165 * scale_requirement
     good_coins = []
     tickers = binance.fetch_tickers()
     for coin in coins:
@@ -144,10 +144,10 @@ def hold_till_crest(coin):
         prices.append(price)
         obs.append(ob)
         avg_amp = np.average([fit.amp * 2 * fit.freq for fit in fits]) / price
-        ob_amp = (ob - np.average([obs])) * avg_amp
+        ob_amp = (ob - np.average(obs[-24:])) * avg_amp
         print(col(f"[{', '.join(rnd(w*1e3) for w in waves)}] => {rnd(wave*1e3)}", 24), col(round(ob,1)), col(rnd(ob_amp*1e3), 7), col(percentage(gain)))
 
-        if wave + ob_amp + avg_amp / 4 < 0:
+        if wave + ob_amp < 0:
             try:
                 trade_coin(coin.name, 'BTC')
                 break
