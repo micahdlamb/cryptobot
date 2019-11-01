@@ -138,14 +138,15 @@ def hold_till_crest(coin):
         price = binance.fetch_ticker(coin.symbol)['last']
         gain = (price - start_price) / start_price
         waves, candles, fits = reduce_waves(coin.symbol)
+        waves = [w * 1e3 for w in waves]
         wave = sum(waves)
         ob, _vol = reduce_order_book(coin.symbol)
         times.append(datetime.datetime.now().timestamp() / 3600)
         prices.append(price)
         obs.append(ob)
-        avg_amp = np.average([fit.amp * 2 * fit.freq for fit in fits]) / price
-        ob_amp = (ob - np.average(obs[-24:])) * avg_amp
-        print(col(f"[{', '.join(rnd(w*1e3) for w in waves)}] => {rnd(wave*1e3)}", 24), col(round(ob,1)), col(rnd(ob_amp*1e3), 7), col(percentage(gain)))
+        amp = sum(fit.amp * 2 * fit.freq for fit in fits) / price
+        ob_amp = (ob - np.average(obs[-24:])) * amp * 1e3
+        print(col(f"[{', '.join(rnd(w) for w in waves)}] => {rnd(wave)}", 24), col(round(ob,1)), col(rnd(ob_amp), 7), col(percentage(gain)))
 
         if wave + ob_amp < 0:
             try:
